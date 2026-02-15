@@ -1,31 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Dimensions,
-  Alert,
-  StatusBar,
-  Platform,
-  Linking,
-} from 'react-native';
+import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator, StatusBar, Linking } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { 
-  Mail, 
-  Sparkles, 
-  ChevronLeft, 
-  ExternalLink, 
-  Send,
-  FileText
-} from 'lucide-react-native';
+import { Mail, ArrowLeft, Send, Sparkles, CheckSquare, Clock, Shield, Briefcase, User, Calendar, Paperclip, ChevronRight, FileText, Link, Database, ChevronLeft, ExternalLink } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import gmailService from '../../services/gmail';
 import aiService from '../../services/AIService';
+import linkageService from '../../services/LinkageService';
 import { ProcessedFile, UnreadEmail, SyncStatus } from '../../types';
 import { appStorage } from '../../utils/storage';
 import { useTheme } from '@/components/ThemeContext';
@@ -42,9 +24,20 @@ export default function EmailDetailScreen() {
   const [item, setItem] = useState<ProcessedFile | UnreadEmail | null>(null);
   const [summary, setSummary] = useState<string>('');
   const [replies, setReplies] = useState<string[]>([]);
+  const [todoList, setTodoList] = useState<string>('');
+  const [relatedData, setRelatedData] = useState<{ files: ProcessedFile[], threads: any[] }>({ files: [], threads: [] });
   const [body, setBody] = useState<string>('');
   const { theme, colors } = useTheme();
   const toast = useToast();
+
+  // Navigation handlers
+  const handleOpenRelatedFile = (file: ProcessedFile) => {
+    router.push(`/email/${file.id}?type=file`);
+  };
+
+  const handleOpenRelatedThread = (thread: any) => {
+    router.push(`/email/${thread.id}?type=email`);
+  };
 
   useEffect(() => {
     loadContent();
@@ -75,18 +68,48 @@ export default function EmailDetailScreen() {
       setItem(content);
       setLoading(false); // Show shell
 
+      // Fetch user info for personalization
+      const userInfo = await appStorage.getUserInfo();
+      const userName = userInfo?.name || 'User';
+
       // Fetch body for AI
       const fullBody = await gmailService.getMessageBody(emailId);
       setBody(fullBody);
 
-      // AI Analysis
-      const [aiSummary, aiReplies] = await Promise.all([
-        aiService.generateSummary(fullBody || ''),
-        aiService.generateReplies(fullBody || '')
-      ]);
+      // AI Analysis (Sequential or Parallel - Parallel for replies, streaming for others)
+      const fetchReplies = async () => {
+        const aiReplies = await aiService.generateReplies(fullBody || '', userName);
+        setReplies(Array.isArray(aiReplies) ? aiReplies : []);
+      };
 
-      setSummary(typeof aiSummary === 'string' ? aiSummary : '');
-      setReplies(Array.isArray(aiReplies) ? aiReplies : []);
+      // Summary Streaming
+      const fetchSummary = async () => {
+        await aiService.generateSummary(fullBody || '', (text) => {
+          setSummary(text.replace(/\[Your Name\]/g, userName));
+          setAiLoading(false); // Stop summary skeleton as soon as text starts
+        });
+      };
+
+      // Todo Streaming
+      const fetchTodo = async () => {
+        await aiService.extractTodo(fullBody || '', (text) => {
+          setTodoList(text);
+        });
+      };
+
+      // Linkage Fetching
+      const fetchLinkage = async () => {
+        const fromEmail = type === 'file' 
+          ? (content as ProcessedFile).emailFrom 
+          : (content as UnreadEmail).from;
+        
+        if (fromEmail) {
+          const data = await linkageService.getRelatedKnowledge(fromEmail, content?.id);
+          setRelatedData(data);
+        }
+      };
+
+      await Promise.all([fetchReplies(), fetchSummary(), fetchTodo(), fetchLinkage()]);
     } catch (error) {
       console.error("Error loading email detail:", error);
     } finally {
@@ -183,18 +206,88 @@ export default function EmailDetailScreen() {
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Insights</Text>
           </View>
           
-          {aiLoading ? (
+          {summary.length === 0 ? (
             <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Skeleton height={18} width="90%" style={{ marginBottom: 8 }} variant="rounded" />
-              <Skeleton height={18} width="95%" style={{ marginBottom: 8 }} variant="rounded" />
-              <Skeleton height={18} width="60%" variant="rounded" />
+              <Skeleton height={20} width="90%" style={{ marginBottom: 16 }} variant="rounded" />
+              <Skeleton height={20} width="60%" variant="rounded" />
             </View>
           ) : (
-            <BlurView intensity={60} tint={theme === 'dark' ? 'dark' : 'light'} style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <BlurView intensity={80} tint={theme === 'dark' ? 'dark' : 'light'} style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.summaryText, { color: colors.text }]}>{summary}</Text>
             </BlurView>
           )}
         </Animated.View>
+
+        {/* Action Items (To-Do List) */}
+        <Animated.View entering={FadeInDown.delay(250)} style={styles.todoSection}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.todoIconContainer, { backgroundColor: colors.primary + '20' }]}>
+              <CheckSquare size={16} color={colors.primary} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Action Items</Text>
+          </View>
+          
+          {todoList.length === 0 ? (
+            <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Skeleton height={16} width="80%" style={{ marginBottom: 12 }} variant="rounded" />
+              <Skeleton height={16} width="70%" style={{ marginBottom: 12 }} variant="rounded" />
+              <Skeleton height={16} width="85%" variant="rounded" />
+            </View>
+          ) : (
+            <View style={[styles.todoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.todoContent}>
+                {todoList.split('\n').filter(l => l.trim()).map((line, i) => {
+                  const cleanLine = line.replace(/^-\s*\[\s*\]\s*/, '▫️ ').replace(/^-\s*\[x\]\s*/, '✅ ').replace(/^\*\s*/, '• ');
+                  return (
+                    <Animated.View key={i} entering={FadeInRight.delay(300 + i * 50)} style={styles.todoItemRow}>
+                      <Text style={[styles.todoText, { color: colors.text }]}>
+                        {cleanLine.split(' ').map((word, wi) => (
+                          <Text key={wi} style={word.includes('[High]') ? { color: '#FF4C4C', fontWeight: '700' } : word.includes('(Due:') ? { color: colors.primary, fontStyle: 'italic' } : {}}>
+                            {word}{' '}
+                          </Text>
+                        ))}
+                      </Text>
+                    </Animated.View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Document Linkage Sidebar (Related Items) */}
+        {(relatedData.files.length > 0 || relatedData.threads.length > 0) && (
+          <Animated.View entering={FadeInDown.delay(350)} style={styles.linkageSection}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.todoIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                <Database size={16} color={colors.primary} />
+              </View>
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Related Knowledge</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.relatedScroll}>
+              {relatedData.files.map((file, idx) => (
+                <TouchableOpacity 
+                  key={idx} 
+                  style={[styles.relatedItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  onPress={() => handleOpenRelatedFile(file)}
+                >
+                  <FileText size={16} color={colors.primary} />
+                  <Text style={[styles.relatedItemText, { color: colors.text }]} numberOfLines={1}>{file.filename}</Text>
+                </TouchableOpacity>
+              ))}
+              {relatedData.threads.map((thread, idx) => (
+                <TouchableOpacity 
+                  key={`t-${idx}`} 
+                  style={[styles.relatedItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  onPress={() => handleOpenRelatedThread(thread)}
+                >
+                  <Link size={16} color={colors.primary} />
+                  <Text style={[styles.relatedItemText, { color: colors.text }]} numberOfLines={1}>{thread.subject}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
 
         {/* Smart Replies */}
         <Animated.View entering={FadeInDown.delay(300)} style={styles.repliesSection}>
@@ -260,9 +353,19 @@ const styles = StyleSheet.create({
   summarySection: { marginBottom: 32 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 },
   sparkleContainer: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  todoSection: { marginBottom: 32 },
+  todoIconContainer: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
   summaryCard: { borderRadius: 24, padding: 22, borderWidth: 1, overflow: 'hidden', elevation: 2 },
   summaryText: { fontSize: 15, lineHeight: 24, fontWeight: '500' },
+  todoCard: { borderRadius: 16, padding: 20, borderWidth: 1, overflow: 'hidden' },
+  todoContent: { gap: 12 },
+  todoItemRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  todoText: { fontSize: 14, lineHeight: 24, fontWeight: '500', letterSpacing: 0.2 },
+  linkageSection: { marginBottom: 32 },
+  relatedScroll: { marginTop: 12, paddingBottom: 8 },
+  relatedItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, marginRight: 12, gap: 8, maxWidth: 200, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
+  relatedItemText: { fontSize: 13, fontWeight: '600', flex: 1 },
   repliesSection: { marginBottom: 32 },
   repliesContainer: { gap: 10 },
   replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 18, borderRadius: 16, elevation: 2 },

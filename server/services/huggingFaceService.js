@@ -99,9 +99,10 @@ class HuggingFaceService {
   /**
    * Smart Replies
    */
-  async generateSmartReplies(text, count = 3) {
+  async generateSmartReplies(text, count = 3, userName = 'the user') {
     const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 3000);
     const prompt = `Analyze the tone and intent of this email. Suggest ${count} distinct, professional one-sentence replies.
+    Personalization: The recipient is ${userName}.
     Include one "Confirmation/Acceptance" reply, one "Review/Information Request" reply, and one "Scheduling/Follow-up" reply.
     Avoid generic 'Acknowledged'. Be specific to the email content.
     Format: A simple list with no numbers, just the reply text on new lines.
@@ -116,6 +117,36 @@ class HuggingFaceService {
         .slice(0, count);
     } catch (e) {
       return ["Thanks for reaching out!", "Acknowledged.", "Will get back to you."];
+    }
+  }
+
+  /**
+   * Action Item Extraction (To-Do List)
+   */
+  async extractActionItems(text, userName = 'the user') {
+    const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 4000);
+    const prompt = `
+      Analyze the following email for ${userName} and extract a "To-Do" list of action items. 
+
+      Rules for extraction:
+      1. Only include items that require a specific action from the recipient (${userName}).
+      2. Assign a priority: [High] for deadlines/urgent requests, [Medium] for standard tasks, [Low] for "fyi" or follow-ups.
+      3. Identify any mentioned deadlines and format them as (Due: Date/Time).
+      4. Ignore social pleasantries or general statements.
+      5. Output the result as a clean Markdown checklist.
+
+      If no actionable items are found, reply with: "No specific action items detected."
+
+      Email Content:
+      """
+      ${cleanText}
+      """
+    `;
+
+    try {
+      return await this.askAI(prompt, "You are an efficient project manager assistant.");
+    } catch (e) {
+      return "No specific action items detected.";
     }
   }
 }

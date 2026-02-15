@@ -45,10 +45,10 @@ class UnifiedAIService {
     return DEFAULT_SUMMARY;
   }
 
-  async generateSmartReplies(text, count = 3) {
+  async generateSmartReplies(text, count = 3, userName = 'the user') {
     if (hasGemini) {
       try {
-        const replies = await geminiService.generateSmartReplies(text, count);
+        const replies = await geminiService.generateSmartReplies(text, count, userName);
         return ensureRepliesArray(replies, count);
       } catch (err) {
         console.warn('Gemini replies failed, trying HuggingFace:', err.message);
@@ -56,7 +56,7 @@ class UnifiedAIService {
     }
     if (hasHuggingFace) {
       try {
-        const replies = await huggingFaceService.generateSmartReplies(text, count);
+        const replies = await huggingFaceService.generateSmartReplies(text, count, userName);
         return ensureRepliesArray(replies, count);
       } catch (err) {
         console.warn('HuggingFace replies failed:', err.message);
@@ -81,6 +81,80 @@ class UnifiedAIService {
       }
     }
     return 'Personal';
+  }
+
+  async extractActionItems(text, userName = 'the user') {
+    if (hasGemini) {
+      try {
+        return await geminiService.extractActionItems(text, userName);
+      } catch (err) {
+        console.warn('Gemini extraction failed, trying HuggingFace:', err.message);
+      }
+    }
+    if (hasHuggingFace) {
+      try {
+        return await huggingFaceService.extractActionItems(text, userName);
+      } catch (err) {
+        console.warn('HuggingFace extraction failed:', err.message);
+      }
+    }
+    return "No specific action items detected.";
+  }
+
+  async *generateSummaryStream(text, customPrompt) {
+    if (hasGemini) {
+      try {
+        const prompt = customPrompt || "Summarize this email in a professional, concise tone (max 2 sentences). Focus on the core intent, requested actions, and any mentioned deadlines.";
+        const combinedPrompt = `${prompt}\n\nEmail Content:\n${text}`;
+        yield* geminiService.generateWithFallbackStream(combinedPrompt);
+        return;
+      } catch (err) {
+        console.warn('Gemini stream failed, falling back to static summary:', err.message);
+      }
+    }
+    yield await this.generateSummary(text, customPrompt);
+  }
+
+  async *extractActionItemsStream(text, userName = 'the user') {
+    if (hasGemini) {
+      try {
+        const prompt = `
+          Analyze the following email and extract a "To-Do" list of action items. 
+          Rules for extraction:
+          1. Only include items that require a specific action from the recipient (Personalization: The recipient is ${userName}).
+          2. Assign a priority: [High], [Medium], [Low].
+          3. Identify any mentioned deadlines and format them as (Due: Date/Time).
+          4. Output the result as a clean Markdown checklist.
+          Email Content: """${text}"""
+        `;
+        yield* geminiService.generateWithFallbackStream(prompt);
+        return;
+      } catch (err) {
+        console.warn('Gemini extraction stream failed:', err.message);
+      }
+    }
+    yield await this.extractActionItems(text, userName);
+  }
+
+  /**
+   * Foundation for Semantic Search
+   */
+  async getEmbeddings(text) {
+    if (hasGemini) {
+      return await geminiService.generateEmbeddings(text);
+    }
+    return [];
+  }
+
+  async generateSearchTerms(query) {
+    if (hasGemini) {
+      const prompt = `Analyze this natural language search query: "${query}". 
+      Extract key search entities, keywords, and dates. 
+      Output exactly one comma-separated string of terms for a search engine.`;
+      const response = await geminiService.generateWithFallback(prompt);
+      return response;
+    }
+    return query;
   }
 }
 
