@@ -140,6 +140,7 @@ class BackgroundService {
             category: 'Personal' as any,
             status: SyncStatus.Error,
             uploadedAt: new Date().toISOString(),
+            emailDate: attachment.emailDate,
             size: attachment.size,
             errorMessage: error instanceof Error ? error.message : 'Unknown error',
           };
@@ -224,6 +225,7 @@ class BackgroundService {
         category: category,
         status: SyncStatus.Success,
         uploadedAt: new Date().toISOString(),
+        emailDate: attachment.emailDate,
         size: attachment.size,
         driveFileId: driveFile.fileId,
         driveUrl: driveFile.webViewLink,

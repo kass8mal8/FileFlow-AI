@@ -10,7 +10,8 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import "react-native-reanimated";
 
-import { ThemeProvider as AppThemeProvider } from "@/components/ThemeContext";
+import { ThemeProvider } from "@/components/ThemeContext";
+import { ToastProvider } from "@/components/Toast";
 import { useColorScheme } from "@/components/useColorScheme";
 import authService from "@/services/auth";
 
@@ -90,9 +91,9 @@ export default function RootLayout() {
   }
 
   return (
-    <AppThemeProvider>
+    <ThemeProvider>
       <RootLayoutNav />
-    </AppThemeProvider>
+    </ThemeProvider>
   );
 }
 
@@ -101,11 +102,12 @@ function RootLayoutNav() {
 
   return (
     <NavigationThemeProvider value={theme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/login" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-      </Stack>
+      <ToastProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+        </Stack>
+      </ToastProvider>
     </NavigationThemeProvider>
   );
 }

@@ -83,7 +83,7 @@ class AuthService {
       await secureStorage.setTokens(tokens);
 
       // Fetch and store user info
-      await this.fetchAndStoreUserInfo(tokens.accessToken);
+      await this.refreshUserInfo(tokens.accessToken);
 
       this.notify();
       return tokens;
@@ -183,22 +183,28 @@ class AuthService {
   }
 
   /**
-   * Fetch user info from Google
+   * Fetch and update user info from Google
    */
-  private async fetchAndStoreUserInfo(accessToken: string): Promise<void> {
+  async refreshUserInfo(accessToken?: string): Promise<any> {
     try {
+      const token = accessToken || await this.getValidAccessToken();
+      if (!token) return null;
+
       const response = await axios.get(
         'https://www.googleapis.com/oauth2/v2/userinfo',
         {
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
 
       await appStorage.setUserInfo(response.data);
+      this.notify();
+      return response.data;
     } catch (error) {
       console.error('Error fetching user info:', error);
+      return null;
     }
   }
 

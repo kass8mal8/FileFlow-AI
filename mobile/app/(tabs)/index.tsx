@@ -28,6 +28,18 @@ import Animated, {
 import { useTheme } from "@/components/ThemeContext";
 
 const Logo = require("@/assets/images/logo.png");
+ 
+const formatDate = (dateString?: string) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+};
 
 const FileCard = ({ file, colors }: { file: ProcessedFile, colors: any }) => {
   const handlePress = () => {
@@ -57,9 +69,12 @@ const FileCard = ({ file, colors }: { file: ProcessedFile, colors: any }) => {
           <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
             {file.category}
           </Text>
-          <View style={[styles.metaDivider, { backgroundColor: colors.textTertiary }]} />
           <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
             {(file.size / 1024).toFixed(0)} KB
+          </Text>
+          <View style={[styles.metaDivider, { backgroundColor: colors.textTertiary }]} />
+          <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
+            {formatDate(file.emailDate || file.uploadedAt)}
           </Text>
         </View>
       </View>
@@ -103,6 +118,9 @@ const EmailItem = ({ email, colors }: { email: UnreadEmail, colors: any }) => {
         </Text>
         <Text style={[styles.emailFrom, { color: colors.textSecondary }]} numberOfLines={1}>
           {email.from}
+        </Text>
+        <Text style={[styles.emailDate, { color: colors.textTertiary }]}>
+          {formatDate(email.date)}
         </Text>
       </View>
       <View style={styles.statusIcon}>
@@ -331,6 +349,7 @@ const styles = StyleSheet.create({
   metaDetail: { fontSize: 13 },
   metaDivider: { width: 3, height: 3, borderRadius: 1.5, marginHorizontal: 8, opacity: 0.3 },
   emailFrom: { fontSize: 13 },
+  emailDate: { fontSize: 11, marginTop: 4, fontWeight: '500' },
   aiBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   aiBadgeText: { fontSize: 10, fontWeight: '700' },
   statusIcon: { paddingLeft: 8 },

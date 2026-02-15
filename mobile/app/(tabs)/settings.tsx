@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
   Platform,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/components/ThemeContext";
@@ -27,12 +28,20 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     async function loadSettings() {
-      const info = await appStorage.getUserInfo();
+      // First load from storage for immediate feedback
+      const storedInfo = await appStorage.getUserInfo();
+      setUserInfo(storedInfo);
+
       const registered = await backgroundService.isBackgroundTaskRegistered();
       const period = await appStorage.getSyncPeriod();
-      setUserInfo(info);
       setIsSyncRegistered(registered);
       setSyncPeriod(period);
+
+      // Then fetch fresh info from API to update profile picture etc.
+      const freshInfo = await authService.refreshUserInfo();
+      if (freshInfo) {
+        setUserInfo(freshInfo);
+      }
     }
     loadSettings();
   }, []);
@@ -107,9 +116,13 @@ export default function SettingsScreen() {
               end={{ x: 1, y: 1 }}
             >
               <View style={[styles.avatarContainer, { borderColor: theme === 'dark' ? colors.border : "rgba(255,255,255,0.3)" }]}>
-                <Text style={styles.avatarText}>
-                  {userInfo?.name?.charAt(0) || "U"}
-                </Text>
+                {userInfo?.picture ? (
+                  <Image source={{ uri: userInfo.picture }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {userInfo?.name?.charAt(0) || "U"}
+                  </Text>
+                )}
               </View>
               <View style={styles.profileInfo}>
                 <Text style={styles.profileName}>
@@ -255,7 +268,8 @@ const styles = StyleSheet.create({
   card: { borderRadius: 24, padding: 24, borderWidth: 1, elevation: 2 },
   profileCard: { borderRadius: 24, overflow: "hidden", elevation: 6 },
   profileGradient: { padding: 24, flexDirection: "row", alignItems: "center" },
-  avatarContainer: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginRight: 20, borderWidth: 1 },
+  avatarContainer: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", marginRight: 20, borderWidth: 1, overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { fontSize: 28, fontWeight: "900", color: "#fff" },
   profileInfo: { flex: 1 },
   profileName: { fontSize: 22, fontWeight: "900", color: "#fff", letterSpacing: -0.5 },

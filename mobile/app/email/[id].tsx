@@ -29,18 +29,22 @@ import aiService from '../../services/AIService';
 import { ProcessedFile, UnreadEmail, SyncStatus } from '../../types';
 import { appStorage } from '../../utils/storage';
 import { useTheme } from '@/components/ThemeContext';
+import Skeleton from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 const { width } = Dimensions.get('window');
 
 export default function EmailDetailScreen() {
   const { id, type } = useLocalSearchParams<{ id: string, type: 'file' | 'email' }>();
   const [loading, setLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(true);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [item, setItem] = useState<ProcessedFile | UnreadEmail | null>(null);
   const [summary, setSummary] = useState<string>('');
   const [replies, setReplies] = useState<string[]>([]);
   const [body, setBody] = useState<string>('');
   const { theme, colors } = useTheme();
+  const toast = useToast();
 
   useEffect(() => {
     loadContent();
@@ -49,6 +53,7 @@ export default function EmailDetailScreen() {
   const loadContent = async () => {
     try {
       setLoading(true);
+      setAiLoading(true);
       let content: ProcessedFile | UnreadEmail | null = null;
       let emailId = id;
 
@@ -68,12 +73,13 @@ export default function EmailDetailScreen() {
       }
 
       setItem(content);
+      setLoading(false); // Show shell
 
       // Fetch body for AI
       const fullBody = await gmailService.getMessageBody(emailId);
       setBody(fullBody);
 
-      // AI Analysis (services return safe fallbacks on failure)
+      // AI Analysis
       const [aiSummary, aiReplies] = await Promise.all([
         aiService.generateSummary(fullBody || ''),
         aiService.generateReplies(fullBody || '')
@@ -85,6 +91,7 @@ export default function EmailDetailScreen() {
       console.error("Error loading email detail:", error);
     } finally {
       setLoading(false);
+      setAiLoading(false);
     }
   };
 
@@ -104,20 +111,19 @@ export default function EmailDetailScreen() {
         reply
       );
 
-      Alert.alert("Success", "Draft saved in Gmail!");
+      toast.show("Draft saved to Gmail!");
     } catch (error) {
       console.error("Error creating draft:", error);
-      Alert.alert("Error", "Failed to create draft.");
+      toast.show("Failed to create draft", "error");
     } finally {
       setDrafting(null);
     }
   };
 
-  if (loading) {
+  if (loading && !item) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>AI analysis in progress...</Text>
       </View>
     );
   }
@@ -171,43 +177,65 @@ export default function EmailDetailScreen() {
         {/* AI Summary Card */}
         <Animated.View entering={FadeInDown.delay(200)} style={styles.summarySection}>
           <View style={styles.sectionHeader}>
-            <Sparkles size={18} color={colors.primary} />
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Summary</Text>
+            <View style={[styles.sparkleContainer, { backgroundColor: colors.primary + '20' }]}>
+              <Sparkles size={16} color={colors.primary} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Insights</Text>
           </View>
-          <BlurView intensity={60} tint={theme === 'dark' ? 'dark' : 'light'} style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.summaryText, { color: colors.text }]}>{summary}</Text>
-          </BlurView>
+          
+          {aiLoading ? (
+            <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Skeleton height={18} width="90%" style={{ marginBottom: 8 }} variant="rounded" />
+              <Skeleton height={18} width="95%" style={{ marginBottom: 8 }} variant="rounded" />
+              <Skeleton height={18} width="60%" variant="rounded" />
+            </View>
+          ) : (
+            <BlurView intensity={60} tint={theme === 'dark' ? 'dark' : 'light'} style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.summaryText, { color: colors.text }]}>{summary}</Text>
+            </BlurView>
+          )}
         </Animated.View>
 
         {/* Smart Replies */}
         <Animated.View entering={FadeInDown.delay(300)} style={styles.repliesSection}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Smart Replies</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginBottom: 16 }]}>Recommended Actions</Text>
           <View style={styles.repliesContainer}>
-            {replies.map((reply, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => handleSmartReply(reply)}
-                disabled={!!drafting}
-              >
-                <Text style={[styles.replyButtonText, { color: colors.primary }]}>{reply}</Text>
-                {drafting === reply ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Send size={14} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+            {aiLoading ? (
+              Array(3).fill(0).map((_, i) => (
+                <View key={i} style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 20 }]}>
+                  <Skeleton width="70%" height={16} variant="rounded" />
+                  <Skeleton width={16} height={16} variant="circle" />
+                </View>
+              ))
+            ) : (
+              replies.map((reply, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  onPress={() => handleSmartReply(reply)}
+                  disabled={!!drafting}
+                >
+                  <Text style={[styles.replyButtonText, { color: colors.primary }]}>{reply}</Text>
+                  {drafting === reply ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Send size={14} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         </Animated.View>
 
         {/* Original Content */}
-        <View style={styles.contentSection}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Original Snippet</Text>
-          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
-            {type === 'file' ? (item as ProcessedFile).emailSubject : (item as UnreadEmail).snippet}
-          </Text>
-        </View>
+        <Animated.View entering={FadeInDown.delay(400)} style={styles.contentSection}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Context</Text>
+          <View style={[styles.contentCard, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
+            <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
+              {type === 'file' ? (item as ProcessedFile).emailSubject : (item as UnreadEmail).snippet}
+            </Text>
+          </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -217,7 +245,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingText: { marginTop: 16, fontSize: 14, fontWeight: '600' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 54, paddingBottom: 16, paddingHorizontal: 16, borderBottomWidth: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 44 : 12, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1 },
   headerTitle: { fontSize: 18, fontWeight: '800', flex: 1, textAlign: 'center', marginHorizontal: 16, letterSpacing: -0.5 },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
@@ -230,14 +258,16 @@ const styles = StyleSheet.create({
   viewBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   viewBadgeText: { fontSize: 12, fontWeight: 'bold' },
   summarySection: { marginBottom: 32 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 },
-  summaryCard: { borderRadius: 24, padding: 20, borderWidth: 1, overflow: 'hidden' },
-  summaryText: { fontSize: 16, lineHeight: 24, fontWeight: '500' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 },
+  sparkleContainer: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
+  summaryCard: { borderRadius: 24, padding: 22, borderWidth: 1, overflow: 'hidden', elevation: 2 },
+  summaryText: { fontSize: 15, lineHeight: 24, fontWeight: '500' },
   repliesSection: { marginBottom: 32 },
-  repliesContainer: { gap: 12 },
-  replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 16, borderRadius: 16, elevation: 2 },
-  replyButtonText: { fontSize: 14, fontWeight: '600', flex: 1, marginRight: 12 },
-  contentSection: { marginTop: 8 },
-  bodyText: { fontSize: 14, lineHeight: 22 }
+  repliesContainer: { gap: 10 },
+  replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 18, borderRadius: 16, elevation: 2 },
+  replyButtonText: { fontSize: 14, fontWeight: '700', flex: 1, marginRight: 12 },
+  contentSection: { marginTop: 12 },
+  contentCard: { padding: 20, borderRadius: 22, borderWidth: 1, borderStyle: 'dashed' },
+  bodyText: { fontSize: 14, lineHeight: 22, fontWeight: '500' }
 });

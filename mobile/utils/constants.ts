@@ -19,9 +19,9 @@ export const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1';
 export const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 export const UPLOAD_API_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
-// Backend AI Classification Endpoint
-// TODO: Replace with your actual backend endpoint
-export const AI_CLASSIFICATION_ENDPOINT = process.env.EXPO_PUBLIC_AI_CLASSIFICATION_ENDPOINT || 'https://your-backend-api.com/classify';
+// Backend API Base URL
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
+export const AI_CLASSIFICATION_ENDPOINT = `${API_BASE_URL}/classify`;
 
 // Background Task Configuration
 export const BACKGROUND_FETCH_TASK = 'fileflow-background-sync';

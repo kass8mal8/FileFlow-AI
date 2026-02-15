@@ -43,6 +43,7 @@ export interface ProcessedFile {
   category: FileCategory;
   status: SyncStatus;
   uploadedAt: string;
+  emailDate?: string;
   size: number;
   mimeType?: string;
   localUri?: string;

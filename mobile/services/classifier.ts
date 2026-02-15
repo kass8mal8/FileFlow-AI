@@ -32,10 +32,6 @@ class ClassifierService {
     request: ClassificationRequest
   ): Promise<FileCategory | null> {
     try {
-      // Early exit for placeholder URL to avoid CORS/Network errors in dev
-      if (AI_CLASSIFICATION_ENDPOINT.includes('your-backend-api.com')) {
-        return null;
-      }
 
       const response = await axios.post<ClassificationResponse>(
         AI_CLASSIFICATION_ENDPOINT,
@@ -53,10 +49,7 @@ class ClassifierService {
     } catch (error) {
       // Silent fallback for network/CORS errors which are expected during local dev
       if (axios.isAxiosError(error) && (error.code === 'ERR_NETWORK' || !error.response)) {
-        // Only log if it's NOT the placeholder
-        if (!AI_CLASSIFICATION_ENDPOINT.includes('your-backend-api.com')) {
-          console.log('Classifier backend unavailable, using rule-based fallback');
-        }
+        console.log('Classifier backend unavailable, using rule-based fallback');
       } else {
         console.warn('Backend classification failed:', error instanceof Error ? error.message : 'Unknown error');
       }
