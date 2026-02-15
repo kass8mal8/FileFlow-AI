@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AI_CLASSIFICATION_ENDPOINT } from '../utils/constants';
+import { API_BASE_URL } from '../utils/constants';
 
 class AIService {
   /**
@@ -11,16 +11,14 @@ class AIService {
     // or return a mock summary.
     
     try {
-      if (AI_CLASSIFICATION_ENDPOINT.includes('your-backend-api.com')) {
-        return "This email discusses project updates and upcoming deadlines. The sender is requesting a follow-up on the latest file shared.";
-      }
-
-      // Mock LLM call logic
-      const response = await axios.post(`${AI_CLASSIFICATION_ENDPOINT}/summary`, {
-        text: emailBody.substring(0, 1000), // Cap for token limits
-        prompt: "Summarize this email in a professional, concise tone (max 2 sentences). Focus on the core intent, requested actions, and any mentioned deadlines. Do not use generic phrases."
+      // Direct call to our new backend
+      const response = await axios.post(`${API_BASE_URL}/summary`, {
+        text: emailBody.substring(0, 5000), // Cap for token limits
+        prompt: "Summarize this email in a professional, concise tone (max 2 sentences). Focus on the core intent, requested actions, and any mentioned deadlines."
       });
-      return response.data.summary;
+      const summary = response.data?.summary;
+      if (typeof summary === 'string' && summary.trim()) return summary.trim();
+      return "This message contains information that may need your attention. Review the content for key points and any requested actions.";
     } catch (error) {
       // Improved mock responses based on common email patterns
       if (emailBody.toLowerCase().includes('invoice') || emailBody.toLowerCase().includes('payment')) {
@@ -37,30 +35,20 @@ class AIService {
    * Generate smart replies based on email content
    */
   async generateReplies(emailBody: string): Promise<string[]> {
+    const fallback = ["Thanks for reaching out!", "Acknowledged, I'm on it.", "Will review and reply by EOD."];
     try {
-      if (AI_CLASSIFICATION_ENDPOINT.includes('your-backend-api.com')) {
-        // Dynamic mock replies based on context
-        if (emailBody.toLowerCase().includes('?')) {
-          return [
-            "Yes, that works for me. Let's proceed.",
-            "I'll need to double-check and get back to you.",
-            "Could you provide more details on this?"
-          ];
-        }
-        return [
-          "Confirmed. Thank you for the update!",
-          "I've received the files, will review shortly.",
-          "Perfect, let's touch base later this week."
-        ];
-      }
-
-      const response = await axios.post(`${AI_CLASSIFICATION_ENDPOINT}/replies`, {
+      const response = await axios.post(`${API_BASE_URL}/replies`, {
         text: emailBody,
         count: 3
       });
-      return response.data.replies;
+      const replies = response.data?.replies;
+      if (Array.isArray(replies) && replies.length > 0) {
+        const valid = replies.filter((r): r is string => typeof r === 'string' && r.trim());
+        if (valid.length > 0) return valid.slice(0, 3);
+      }
+      return fallback;
     } catch (error) {
-      return ["Thanks for reaching out!", "Acknowledged, I'm on it.", "Will review and reply by EOD."];
+      return fallback;
     }
   }
 }

@@ -73,14 +73,14 @@ export default function EmailDetailScreen() {
       const fullBody = await gmailService.getMessageBody(emailId);
       setBody(fullBody);
 
-      // AI Analysis
+      // AI Analysis (services return safe fallbacks on failure)
       const [aiSummary, aiReplies] = await Promise.all([
-        aiService.generateSummary(fullBody),
-        aiService.generateReplies(fullBody)
+        aiService.generateSummary(fullBody || ''),
+        aiService.generateReplies(fullBody || '')
       ]);
 
-      setSummary(aiSummary);
-      setReplies(aiReplies);
+      setSummary(typeof aiSummary === 'string' ? aiSummary : '');
+      setReplies(Array.isArray(aiReplies) ? aiReplies : []);
     } catch (error) {
       console.error("Error loading email detail:", error);
     } finally {
