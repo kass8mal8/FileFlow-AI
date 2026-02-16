@@ -1,9 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const connectDB = require('./config/db');
 const aiRoutes = require('./routes/aiRoutes');
-const paymentRoutes = require('./routes/paymentRoutes'); // Import payment routes
+const paymentRoutes = require('./routes/paymentRoutes');
 
 require('dotenv').config();
+
+// Connect to Database
+connectDB();
 
 const app = express();
 const port = process.env.PORT || 3001;

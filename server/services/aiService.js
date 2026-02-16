@@ -5,8 +5,16 @@
 const geminiService = require('./geminiService');
 const huggingFaceService = require('./huggingFaceService');
 
+// Agents
+const classifierAgent = require('../agents/ClassifierAgent');
+const summaryAgent = require('../agents/SummaryAgent');
+const extractionAgent = require('../agents/ExtractionAgent');
+// const actionAgent = require('../agents/ActionAgent'); // Future use
+
 const hasGemini = !!process.env.GEMINI_API_KEY;
 const hasHuggingFace = !!process.env.HUGGINGFACE_API_KEY;
+
+const AICache = require('../models/AICache');
 
 const DEFAULT_SUMMARY = "This message contains information that may need your attention. Review the content for key points and any requested actions.";
 const DEFAULT_REPLIES = ["Thanks for reaching out!", "Acknowledged, I'm on it.", "Will review and reply by EOD."];
@@ -25,44 +33,68 @@ function ensureRepliesArray(value, count = 3) {
 }
 
 class UnifiedAIService {
-  async generateSummary(text, customPrompt) {
-    if (hasGemini) {
-      try {
-        const summary = await geminiService.generateSummary(text, customPrompt);
-        return ensureString(summary);
-      } catch (err) {
-        console.warn('Gemini summary failed, trying HuggingFace:', err.message);
+  /**
+   * Helper: Check Cache or Execute & Save
+   */
+  async getCachedResult(resourceId, type, params, generatorFn) {
+    try {
+      if (!resourceId) return await generatorFn(); // Can't cache without ID
+
+      // 1. Check Cache
+      const cached = await AICache.findOne({ resourceId, type, params: JSON.stringify(params) });
+      if (cached) {
+        console.log(`⚡ Serving ${type} from Cache for ${resourceId}`);
+        return cached.result;
       }
-    }
-    if (hasHuggingFace) {
-      try {
-        const summary = await huggingFaceService.generateSummary(text, customPrompt);
-        return ensureString(summary);
-      } catch (err) {
-        console.warn('HuggingFace summary failed:', err.message);
+
+      // 2. Generate
+      const result = await generatorFn();
+
+      // 3. Save to Cache (Fire & Forget)
+      if (result) {
+        AICache.create({
+          resourceId, 
+          type, 
+          params: JSON.stringify(params), 
+          result,
+          modelUsed: hasHuggingFace ? 'HuggingFace' : 'Gemini'
+        }).catch(e => console.error("Cache save failed:", e.message));
       }
+
+      return result;
+    } catch (e) {
+      console.error(`Cache Error (${type}):`, e.message);
+      return await generatorFn(); // Fallback to fresh generation
     }
-    return DEFAULT_SUMMARY;
   }
 
-  async generateSmartReplies(text, count = 3, userName = 'the user') {
-    if (hasGemini) {
-      try {
-        const replies = await geminiService.generateSmartReplies(text, count, userName);
-        return ensureRepliesArray(replies, count);
-      } catch (err) {
-        console.warn('Gemini replies failed, trying HuggingFace:', err.message);
+  async generateSummary(text, customPrompt, resourceId) {
+    return await this.getCachedResult(resourceId, 'SUMMARY', { prompt: customPrompt || 'default' }, async () => {
+       return await summaryAgent.execute(text, { prompt: customPrompt });
+    });
+  }
+
+  async generateSmartReplies(text, count = 3, userName = 'the user', resourceId) {
+    return await this.getCachedResult(resourceId, 'REPLIES', { count, userName }, async () => {
+      // Logic copied from previous implementation
+      if (hasGemini) {
+        try {
+          const replies = await geminiService.generateSmartReplies(text, count, userName);
+          return ensureRepliesArray(replies, count);
+        } catch (err) {
+          console.warn('Gemini replies failed, trying HuggingFace:', err.message);
+        }
       }
-    }
-    if (hasHuggingFace) {
-      try {
-        const replies = await huggingFaceService.generateSmartReplies(text, count, userName);
-        return ensureRepliesArray(replies, count);
-      } catch (err) {
-        console.warn('HuggingFace replies failed:', err.message);
+      if (hasHuggingFace) {
+        try {
+          const replies = await huggingFaceService.generateSmartReplies(text, count, userName);
+          return ensureRepliesArray(replies, count);
+        } catch (err) {
+          console.warn('HuggingFace replies failed:', err.message);
+        }
       }
-    }
-    return DEFAULT_REPLIES.slice(0, count);
+      return DEFAULT_REPLIES.slice(0, count);
+    });
   }
 
   async classifyContent(filename, subject, snippet, from) {
@@ -155,6 +187,31 @@ class UnifiedAIService {
       return response;
     }
     return query;
+  }
+  async detectIntent(text, resourceId) {
+    return await this.getCachedResult(resourceId, 'INTENT', { len: text.length }, async () => {
+        try {
+            // Step 1: Classification (Mistral -> Gemini)
+            const classification = await classifierAgent.execute(text, {});
+            const intent = classification.intent;
+    
+            // Step 2: Extraction based on Intent (Gemini Pro)
+            let details = {};
+            if (['INVOICE', 'MEETING', 'CONTRACT'].includes(intent)) {
+                details = await extractionAgent.execute(text, { intent });
+            }
+    
+            return {
+                intent,
+                confidence: classification.confidence,
+                details,
+                source: classification.source
+            };
+        } catch (e) {
+            console.error("Agent orchestration failed:", e);
+            return { intent: "INFO", confidence: 0, details: {} };
+        }
+    });
   }
 }
 

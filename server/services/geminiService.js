@@ -27,11 +27,11 @@ class GeminiService {
    * Streaming Execution with 2026 Model Fallbacks
    */
   async *generateWithFallbackStream(prompt, config = {}) {
+    // Don't change these models (all 1. versions are unsupported)
     const modelsToTry = [
-      "gemini-3-flash-preview",
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash"
+      "gemini-2.5-flash", 
+      "gemini-2.5-pro",
+      "gemini-2.5-flash-lite"
     ];
 
     let lastError = null;
@@ -75,11 +75,11 @@ class GeminiService {
    * Primary Execution with 2026 Model Fallbacks (Non-streamed)
    */
   async generateWithFallback(prompt, config = {}) {
+    // Don't change these models (all 1. versions are unsupported)
     const modelsToTry = [
-      "gemini-3-flash-preview", // Best intelligence/reasoning
-      "gemini-2.5-flash",       // 2026 Stable Standard
-      "gemini-2.5-flash-lite",  // High-speed fallback
-      "gemini-2.0-flash"        // Legacy stable (Retiring soon)
+      "gemini-2.5-flash", 
+      "gemini-2.5-pro",
+      "gemini-2.5-flash-lite"
     ];
 
     let lastError = null;
@@ -150,13 +150,11 @@ class GeminiService {
     const prompt = `
       Analyze this email: ${text}
       Recipient's name: ${userName}
-      Task: Suggest ${count} professional replies. 
-      Variety Requirement: 
-      1. One short confirmation.
-      2. One request for more details/clarification.
-      3. One proactive next-step suggestion.
-      
-      Constraint: Return the output as a valid JSON array of strings. Ensure replies are signed or mention the recipient's name appropriately if the context requires.
+      Task: Suggest 2 short, professional replies. 
+      Constraint: 
+      1. Maximum 2 formatted replies.
+      2. Each reply must be very concise (max 2 sentences).
+      3. Return as valid JSON array of strings.
     `;
 
     try {
@@ -232,6 +230,30 @@ class GeminiService {
     } catch (error) {
       console.warn('Embedding generation failed:', error.message);
       return [];
+    }
+  }
+  /**
+   * Detect Intent from Text (Invoice, Meeting, etc.)
+   */
+  async detectIntent(text) {
+    const prompt = `
+      Analyze the text and determine the intent.
+      Return a JSON object: { "intent": "INVOICE" | "MEETING" | "CONTRACT" | "INFO", "confidence": number, "details": object }
+      
+      Details schema:
+      - INVOICE: { amount: number, currency: string, due_date: string, paybill_number: string, account_number: string }
+      - MEETING: { date: string, time: string, platform: string, link: string }
+      - CONTRACT: { parties: string[], effective_date: string }
+      
+      Text: "${text.substring(0, 5000)}"
+    `;
+
+    try {
+      const raw = await this.generateWithFallback(prompt, { responseMimeType: "application/json" });
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn("Intent detection failed, fallback to INFO", e);
+      return { intent: "INFO", confidence: 0, details: {} };
     }
   }
 }

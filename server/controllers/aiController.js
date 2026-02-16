@@ -1,4 +1,5 @@
 const aiService = require('../services/aiService');
+const ragService = require('../services/ragService');
 
 class AIController {
   /**
@@ -31,12 +32,13 @@ class AIController {
    */
   async summary(req, res) {
     try {
-      const { text, prompt, stream } = req.body;
+      const { text, prompt, stream, resourceId } = req.body;
       if (!text) {
         return res.status(400).json({ error: 'Text is required' });
       }
 
       if (stream) {
+        // Stream doesn't use cache yet for MVP simplicity
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Transfer-Encoding', 'chunked');
         
@@ -46,7 +48,7 @@ class AIController {
         return res.end();
       }
 
-      const summary = await aiService.generateSummary(text, prompt);
+      const summary = await aiService.generateSummary(text, prompt, resourceId);
       res.json({ summary });
     } catch (error) {
       console.error('Error in summary:', error);
@@ -59,13 +61,13 @@ class AIController {
    */
   async replies(req, res) {
     try {
-      const { text, count, userName } = req.body;
+      const { text, count, userName, resourceId } = req.body;
       
       if (!text) {
         return res.status(400).json({ error: 'Text is required for replies' });
       }
 
-      const replies = await aiService.generateSmartReplies(text, count, userName);
+      const replies = await aiService.generateSmartReplies(text, count, userName, resourceId);
       res.json({ replies });
     } catch (error) {
       console.error('Controller Replies Error:', error);
@@ -137,6 +139,59 @@ class AIController {
     } catch (error) {
       console.error('Search error:', error);
       res.status(500).json({ error: 'Search failed' });
+    }
+  }
+
+  /**
+   * Chat with a specific file (RAG)
+   */
+  /**
+   * Chat with a specific file (RAG) or context
+   */
+  async chat(req, res) {
+    try {
+      const { query, context } = req.body;
+      const file = req.file;
+
+      if (!query) return res.status(400).json({ error: 'Query is required' });
+      if (!file && !context) return res.status(400).json({ error: 'File or Context is required' });
+
+      let textToAnalyze = context || '';
+
+      if (file) {
+        console.log(`Processing chat for file: ${file.originalname} (${file.mimetype})`);
+        textToAnalyze = await ragService.extractText(file.path, file.mimetype);
+      }
+
+      // Chat with Document/Context
+      const answer = await ragService.chatWithDocument(query, textToAnalyze);
+
+      res.json({ answer });
+    } catch (error) {
+      console.error('Chat error:', error);
+      res.status(500).json({ error: 'Failed to process chat request' });
+    }
+  }
+  /**
+   * Detect User Intent
+   */
+  async detectIntent(req, res) {
+    try {
+      const { text, filename, subject, from } = req.body;
+      
+      // Construct a meaningful context string
+      const context = text || `File: ${filename}\nSubject: ${subject}\nSender: ${from}`;
+      
+      if (!context) return res.status(400).json({ error: 'Context is required' });
+
+      // Use the service to classify intent
+      const resourceId = filename ? `${filename}_${subject}` : (req.body.resourceId || 'unknown');
+      const intentData = await aiService.detectIntent(context, resourceId);
+      
+      res.json(intentData);
+    } catch (error) {
+       console.error('Intent detection error:', error);
+       res.status(500).json({ error: 'Intent detection failed' });
     }
   }
 }
