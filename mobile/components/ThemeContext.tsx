@@ -20,7 +20,10 @@ export const LIGHT_COLORS = {
   warning: '#d97706', // Amber 600
   error: '#dc2626', // Red 600
   white: '#ffffff',
-  glass: 'rgba(255, 255, 255, 0.5)',
+  glass: 'rgba(255, 255, 255, 0.7)',
+  glassBorder: 'rgba(255, 255, 255, 0.5)',
+  gradientStart: '#f8fafc',
+  gradientEnd: '#e2e8f0',
 };
 
 export const DARK_COLORS = {
@@ -38,7 +41,10 @@ export const DARK_COLORS = {
   warning: '#f59e0b', // Amber 500
   error: '#ef4444', // Red 500
   white: '#ffffff',
-  glass: 'rgba(15, 23, 42, 0.5)',
+  glass: 'rgba(30, 41, 59, 0.7)',
+  glassBorder: 'rgba(255, 255, 255, 0.1)',
+  gradientStart: '#0f172a',
+  gradientEnd: '#1e293b',
 };
 
 interface ThemeContextType {
@@ -46,6 +52,7 @@ interface ThemeContextType {
   preference: ThemePreference;
   setPreference: (pref: ThemePreference) => Promise<void>;
   colors: typeof LIGHT_COLORS;
+  isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -98,6 +105,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return theme === 'dark' ? DARK_COLORS : LIGHT_COLORS;
   }, [theme]);
 
+  const isDark = theme === 'dark';
+
   // Log summary on every state change
   useEffect(() => {
     console.log(`[Theme ${instanceId}] Render state: pref=${preference}, theme=${theme}, device=${deviceColorScheme}`);
@@ -106,7 +115,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   if (!isLoaded) return null;
 
   return (
-    <ThemeContext.Provider value={{ theme, preference, setPreference, colors }}>
+    <ThemeContext.Provider value={{ theme, preference, setPreference, colors, isDark }}>
       {children}
     </ThemeContext.Provider>
   );

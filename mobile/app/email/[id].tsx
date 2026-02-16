@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator, StatusBar, Linking } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator, StatusBar, Linking, TextInput, KeyboardAvoidingView } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { Mail, ArrowLeft, Send, Sparkles, CheckSquare, Clock, Shield, Briefcase, User, Calendar, Paperclip, ChevronRight, FileText, Link, Database, ChevronLeft, ExternalLink } from 'lucide-react-native';
+import { Mail, ArrowLeft, Send, Sparkles, CheckSquare, Clock, Shield, Briefcase, User, Calendar, Paperclip, ChevronRight, FileText, Link, Database, ChevronLeft, ExternalLink, Bot } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import gmailService from '../../services/gmail';
@@ -16,6 +16,7 @@ import Skeleton from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import ProBadge from '@/components/ProBadge';
 import PaywallModal from '@/components/PaywallModal';
+import { SmartHeader } from '@/components/SmartHeader';
 
 const { width } = Dimensions.get('window');
 
@@ -32,7 +33,67 @@ export default function EmailDetailScreen() {
   const [body, setBody] = useState<string>('');
   const { theme, colors } = useTheme();
   const toast = useToast();
+  const [chatMessages, setChatMessages] = useState<{id: string, text: string, sender: 'user' | 'ai'}[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [detectedIntent, setDetectedIntent] = useState<{intent: 'INVOICE' | 'MEETING' | 'CONTRACT' | 'INFO', confidence: number, details: any} | null>(null);
+  
+  // existing state...
   const [showPaywall, setShowPaywall] = useState(false);
+
+  // Chat Handler
+  const handleSendChat = async () => {
+    if (!chatInput.trim()) return;
+    
+    const userMsg = chatInput;
+    setChatInput('');
+    setChatMessages(prev => [...prev, { id: Date.now().toString(), text: userMsg, sender: 'user' }]);
+    setChatLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('query', userMsg);
+      
+      if (type === 'email') {
+        const fullContext = `Subject: ${(item as UnreadEmail).subject}\nFrom: ${(item as UnreadEmail).from}\nDate: ${(item as UnreadEmail).date}\n\n${body}`;
+        formData.append('context', fullContext);
+      } else {
+        const fileItem = item as ProcessedFile;
+        // If we have a local URI, upload it. If not, maybe use text extracted previously?
+        // MVP: Try to use localUri if available
+        if (fileItem.localUri) {
+             formData.append('file', {
+                uri: fileItem.localUri,
+                type: fileItem.mimeType || 'application/pdf',
+                name: fileItem.filename
+             } as any);
+        } else {
+             // Fallback: If no local file, just send metadata for now or error
+             // Ideally backend should fetch by ID, but we implemented context/file
+             formData.append('context', `File: ${fileItem.filename}\nCategory: ${fileItem.category}\n(Note: Full file content analysis requires local availability)`);
+        }
+      }
+
+      const response = await fetch('https://unpalatial-alfreda-trackable.ngrok-free.dev/api/chat', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      if (data.answer) {
+         setChatMessages(prev => [...prev, { id: Date.now().toString(), text: data.answer, sender: 'ai' }]);
+      } else {
+         throw new Error('No answer returned');
+      }
+    } catch (err) {
+      console.error("Chat failed", err);
+      setChatMessages(prev => [...prev, { id: Date.now().toString(), text: "I'm having trouble connecting. Please try again.", sender: 'ai' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // ... rest of existing code
   const [paywallFeature, setPaywallFeature] = useState<string>('');
 
   // Navigation handlers
@@ -135,6 +196,32 @@ export default function EmailDetailScreen() {
       };
 
       await Promise.all([fetchReplies(), fetchSummary(), fetchTodo(), fetchLinkage()]);
+
+      // Intent Detection
+      const fetchIntent = async () => {
+         try {
+             // We can assume we have body here
+             const res = await fetch('https://unpalatial-alfreda-trackable.ngrok-free.dev/api/intent', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ 
+                    text: (fullBody || '').substring(0, 3000), // Limit payload
+                    filename: type === 'file' ? (content as ProcessedFile).filename : (content as UnreadEmail).subject,
+                    subject: type === 'file' ? (content as ProcessedFile).emailSubject : (content as UnreadEmail).subject,
+                    from: type === 'file' ? (content as ProcessedFile).emailFrom : (content as UnreadEmail).from,
+                    resourceId: id // Send ID for caching
+                 })
+             });
+             const data = await res.json();
+             if (data.intent) {
+                 setDetectedIntent(data);
+             }
+         } catch (e) {
+             console.log('Intent fetch failed', e);
+         }
+      };
+      fetchIntent();
+
     } catch (error) {
       console.error("Error loading email detail:", error);
     } finally {
@@ -191,7 +278,16 @@ export default function EmailDetailScreen() {
         <View style={{ width: 44 }} />
       </View>
 
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Smart Header (Intent) */}
+        {detectedIntent && (
+            <Animated.View entering={FadeInDown.delay(50)}>
+                <SmartHeader intent={detectedIntent.intent} data={detectedIntent.details} confidence={detectedIntent.confidence} />
+            </Animated.View>
+        )}
+
         {/* Attachment Card if applicable */}
         {type === 'file' && (item as ProcessedFile).status === SyncStatus.Success && (
           <Animated.View entering={FadeInDown.delay(100)} style={styles.attachmentCard}>
@@ -280,82 +376,92 @@ export default function EmailDetailScreen() {
           )}
         </Animated.View>
 
-        {/* Document Linkage Sidebar (Related Items) */}
-        {(relatedData.files.length > 0 || relatedData.threads.length > 0) && (
-          <Animated.View entering={FadeInDown.delay(350)} style={styles.linkageSection}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.todoIconContainer, { backgroundColor: colors.primary + '20' }]}>
-                <Database size={16} color={colors.primary} />
-              </View>
-              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Related Knowledge</Text>
-              {!subscriptionService.isPro() && <ProBadge size="small" />}
+        {/* Smart Replies (Restored & Concise) */}
+        {replies.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.repliesSection}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginBottom: 12 }]}>Quick Reply</Text>
+            <View style={styles.repliesContainer}>
+                {replies.map((reply, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    onPress={() => handleSmartReply(reply)}
+                    disabled={!!drafting}
+                  >
+                    <Text style={[styles.replyButtonText, { color: colors.primary }]} numberOfLines={2}>{reply}</Text>
+                    {drafting === reply ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Send size={14} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.relatedScroll}>
-              {relatedData.files.map((file, idx) => (
-                <TouchableOpacity 
-                  key={idx} 
-                  style={[styles.relatedItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  onPress={() => handleOpenRelatedFile(file)}
-                >
-                  <FileText size={16} color={colors.primary} />
-                  <Text style={[styles.relatedItemText, { color: colors.text }]} numberOfLines={1}>{file.filename}</Text>
-                </TouchableOpacity>
-              ))}
-              {relatedData.threads.map((thread, idx) => (
-                <TouchableOpacity 
-                  key={`t-${idx}`} 
-                  style={[styles.relatedItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  onPress={() => handleOpenRelatedThread(thread)}
-                >
-                  <Link size={16} color={colors.primary} />
-                  <Text style={[styles.relatedItemText, { color: colors.text }]} numberOfLines={1}>{thread.subject}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </Animated.View>
         )}
 
-        {/* Smart Replies */}
-        <Animated.View entering={FadeInDown.delay(300)} style={styles.repliesSection}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginBottom: 16 }]}>Recommended Actions</Text>
-          <View style={styles.repliesContainer}>
-            {aiLoading ? (
-              Array(3).fill(0).map((_, i) => (
-                <View key={i} style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 20 }]}>
-                  <Skeleton width="70%" height={16} variant="rounded" />
-                  <Skeleton width={16} height={16} variant="circle" />
+        {/* Chat with Data Section */}
+        <Animated.View entering={FadeInDown.delay(350)} style={styles.chatSection}>
+            <View style={styles.sectionHeader}>
+                <View style={[styles.todoIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                  <Bot size={16} color={colors.primary} />
                 </View>
-              ))
-            ) : (
-              replies.map((reply, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  onPress={() => handleSmartReply(reply)}
-                  disabled={!!drafting}
-                >
-                  <Text style={[styles.replyButtonText, { color: colors.primary }]}>{reply}</Text>
-                  {drafting === reply ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Send size={14} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ask FileFlow</Text>
+            </View>
+
+            <View style={[styles.chatCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                {chatMessages.length === 0 ? (
+                    <View style={styles.emptyChatState}>
+                        <Text style={[styles.emptyChatText, { color: colors.textTertiary }]}>
+                            Ask me anything about this {type}.
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                           {['Summarize this', 'Action items?', 'Key dates?'].map(txt => (
+                               <TouchableOpacity 
+                                  key={txt} 
+                                  onPress={() => setChatInput(txt)}
+                                  style={[styles.suggestionChip, { borderColor: colors.border }]}
+                               >
+                                  <Text style={[styles.suggestionText, { color: colors.textSecondary }]}>{txt}</Text>
+                               </TouchableOpacity>
+                           ))}
+                        </View>
+                    </View>
+                ) : (
+                    <View style={styles.chatHistory}>
+                        {chatMessages.map((msg, i) => (
+                            <View key={i} style={[
+                                styles.chatBubble, 
+                                msg.sender === 'user' ? { alignSelf: 'flex-end', backgroundColor: colors.primary } : { alignSelf: 'flex-start', backgroundColor: colors.background }
+                            ]}>
+                                <Text style={[styles.chatText, { color: msg.sender === 'user' ? '#fff' : colors.text }]}>{msg.text}</Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+                
+                <View style={[styles.chatInputRow, { borderColor: colors.border, borderTopWidth: 1, marginTop: 12, paddingTop: 12 }]}>
+                    <TextInput 
+                        style={[styles.chatInput, { color: colors.text }]} 
+                        placeholder="Type a question..." 
+                        placeholderTextColor={colors.textTertiary}
+                        value={chatInput}
+                        onChangeText={setChatInput}
+                        multiline
+                    />
+                    <TouchableOpacity 
+                        onPress={handleSendChat} 
+                        disabled={chatLoading || !chatInput}
+                        style={[styles.sendIconBtn, { backgroundColor: colors.primary }, (chatLoading || !chatInput) && { opacity: 0.5 }]}
+                    >
+                        {chatLoading ? <ActivityIndicator size="small" color="#fff" /> : <Send size={16} color="#fff" />}
+                    </TouchableOpacity>
+                </View>
+            </View>
         </Animated.View>
 
-        {/* Original Content */}
-        <Animated.View entering={FadeInDown.delay(400)} style={styles.contentSection}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Context</Text>
-          <View style={[styles.contentCard, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
-            <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
-              {type === 'file' ? (item as ProcessedFile).emailSubject : (item as UnreadEmail).snippet}
-            </Text>
-          </View>
-        </Animated.View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Paywall Modal */}
       <PaywallModal 
@@ -395,15 +501,24 @@ const styles = StyleSheet.create({
   todoContent: { gap: 12 },
   todoItemRow: { flexDirection: 'row', alignItems: 'flex-start' },
   todoText: { fontSize: 14, lineHeight: 24, fontWeight: '500', letterSpacing: 0.2 },
-  linkageSection: { marginBottom: 32 },
-  relatedScroll: { marginTop: 12, paddingBottom: 8 },
-  relatedItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, marginRight: 12, gap: 8, maxWidth: 200, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
-  relatedItemText: { fontSize: 13, fontWeight: '600', flex: 1 },
-  repliesSection: { marginBottom: 32 },
-  repliesContainer: { gap: 10 },
-  replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 18, borderRadius: 16, elevation: 2 },
-  replyButtonText: { fontSize: 14, fontWeight: '700', flex: 1, marginRight: 12 },
+  todoText: { fontSize: 14, lineHeight: 24, fontWeight: '500', letterSpacing: 0.2 },
   contentSection: { marginTop: 12 },
   contentCard: { padding: 20, borderRadius: 22, borderWidth: 1, borderStyle: 'dashed' },
-  bodyText: { fontSize: 14, lineHeight: 22, fontWeight: '500' }
+  bodyText: { fontSize: 14, lineHeight: 22, fontWeight: '500' },
+  repliesSection: { marginBottom: 24 },
+  repliesContainer: { gap: 8 },
+  replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16 },
+  replyButtonText: { fontSize: 13, fontWeight: '600', flex: 1, marginRight: 12 },
+  chatSection: { marginBottom: 32 },
+  chatCard: { borderRadius: 24, padding: 16, borderWidth: 1 },
+  emptyChatState: { alignItems: 'center', padding: 16 },
+  emptyChatText: { fontSize: 14, marginBottom: 12 },
+  suggestionChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
+  suggestionText: { fontSize: 12 },
+  chatHistory: { gap: 8, maxHeight: 200, overflow: 'scroll' }, // In a real app, use FlatList or nested ScrollView with care
+  chatBubble: { padding: 10, borderRadius: 12, maxWidth: '85%' },
+  chatText: { fontSize: 14, lineHeight: 20 },
+  chatInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatInput: { flex: 1, maxHeight: 80, fontSize: 14 },
+  sendIconBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }
 });

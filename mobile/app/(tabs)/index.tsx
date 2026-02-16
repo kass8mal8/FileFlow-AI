@@ -43,6 +43,8 @@ const formatDate = (dateString?: string) => {
   });
 };
 
+import { GlassCard } from "@/components/GlassCard";
+
 const FileCard = ({ file, colors }: { file: ProcessedFile, colors: any }) => {
   const handlePress = () => {
     router.push({
@@ -52,45 +54,44 @@ const FileCard = ({ file, colors }: { file: ProcessedFile, colors: any }) => {
   };
 
   return (
-    <TouchableOpacity
-      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={handlePress}
-      activeOpacity={0.7}
-      disabled={file.status === SyncStatus.Pending}
-    >
-      <View style={styles.cardIconContainer}>
-        <View style={[styles.cardIconBg, { backgroundColor: colors.background }]}>
-          <FileText size={20} color={colors.primary} />
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.8} disabled={file.status === SyncStatus.Pending}>
+      <GlassCard style={styles.card}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={styles.cardIconContainer}>
+            <View style={[styles.cardIconBg, { backgroundColor: colors.background }]}>
+              <FileText size={20} color={colors.primary} />
+            </View>
+          </View>
+          <View style={styles.cardContent}>
+            <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
+              {file.filename || "Untitled Document"}
+            </Text>
+            <View style={styles.cardMeta}>
+              <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
+                {file.category}
+              </Text>
+              <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
+                {(file.size / 1024).toFixed(0)} KB
+              </Text>
+              <View style={[styles.metaDivider, { backgroundColor: colors.textTertiary }]} />
+              <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
+                {formatDate(file.emailDate || file.uploadedAt)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.statusIcon}>
+            {file.status === SyncStatus.Success && (
+              <CircleCheck size={18} color={colors.success} />
+            )}
+            {file.status === SyncStatus.Error && (
+              <AlertCircle size={18} color={colors.error} />
+            )}
+            {file.status === SyncStatus.Pending && (
+              <Clock size={18} color={colors.textTertiary} />
+            )}
+          </View>
         </View>
-      </View>
-      <View style={styles.cardContent}>
-        <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
-          {file.filename || "Untitled Document"}
-        </Text>
-        <View style={styles.cardMeta}>
-          <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
-            {file.category}
-          </Text>
-          <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
-            {(file.size / 1024).toFixed(0)} KB
-          </Text>
-          <View style={[styles.metaDivider, { backgroundColor: colors.textTertiary }]} />
-          <Text style={[styles.metaDetail, { color: colors.textSecondary }]}>
-            {formatDate(file.emailDate || file.uploadedAt)}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.statusIcon}>
-        {file.status === SyncStatus.Success && (
-          <CircleCheck size={18} color={colors.success} />
-        )}
-        {file.status === SyncStatus.Error && (
-          <AlertCircle size={18} color={colors.error} />
-        )}
-        {file.status === SyncStatus.Pending && (
-          <Clock size={18} color={colors.textTertiary} />
-        )}
-      </View>
+      </GlassCard>
     </TouchableOpacity>
   );
 };
@@ -104,32 +105,32 @@ const EmailItem = ({ email, colors }: { email: UnreadEmail, colors: any }) => {
   };
 
   return (
-    <TouchableOpacity
-      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={handlePress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardIconContainer}>
-        <View style={[styles.cardIconBg, { backgroundColor: colors.background }]}>
-          <Mail size={20} color={colors.primary} />
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.8}>
+      <GlassCard style={styles.card}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={styles.cardIconContainer}>
+            <View style={[styles.cardIconBg, { backgroundColor: colors.background }]}>
+              <Mail size={20} color={colors.primary} />
+            </View>
+          </View>
+          <View style={styles.cardContent}>
+            <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
+              {email.subject || "(No Subject)"}
+            </Text>
+            <Text style={[styles.emailFrom, { color: colors.textSecondary }]} numberOfLines={1}>
+              {email.from}
+            </Text>
+            <Text style={[styles.emailDate, { color: colors.textTertiary }]}>
+              {formatDate(email.date)}
+            </Text>
+          </View>
+          <View style={styles.statusIcon}>
+            <View style={[styles.aiBadge, { backgroundColor: colors.primary + '20' }]}>
+              <Text style={[styles.aiBadgeText, { color: colors.primary }]}>AI Ready</Text>
+            </View>
+          </View>
         </View>
-      </View>
-      <View style={styles.cardContent}>
-        <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
-          {email.subject || "(No Subject)"}
-        </Text>
-        <Text style={[styles.emailFrom, { color: colors.textSecondary }]} numberOfLines={1}>
-          {email.from}
-        </Text>
-        <Text style={[styles.emailDate, { color: colors.textTertiary }]}>
-          {formatDate(email.date)}
-        </Text>
-      </View>
-      <View style={styles.statusIcon}>
-        <View style={[styles.aiBadge, { backgroundColor: colors.primary + '20' }]}>
-          <Text style={[styles.aiBadgeText, { color: colors.primary }]}>AI Ready</Text>
-        </View>
-      </View>
+      </GlassCard>
     </TouchableOpacity>
   );
 };
@@ -378,7 +379,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, fontWeight: "500", marginTop: 2 },
   searchContainer: { marginBottom: 24, borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, height: 52, justifyContent: "center" },
   searchInput: { fontSize: 15, fontWeight: "500", ...Platform.select({ web: { outlineStyle: "none" } as any }) },
-  card: { borderRadius: 16, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", borderWidth: 1 },
+  card: { borderRadius: 16, marginBottom: 12 },
   cardIconContainer: { marginRight: 12 },
   cardIconBg: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   cardContent: { flex: 1 },

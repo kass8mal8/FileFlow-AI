@@ -4,6 +4,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useTheme } from '@/components/ThemeContext';
 
+import { AIOrb } from '@/components/AIOrb';
+
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   color: string;
@@ -15,6 +17,7 @@ export default function TabLayout() {
   const { colors, theme } = useTheme();
 
   return (
+    <>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
@@ -73,5 +76,10 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    <AIOrb onPress={() => {
+      // TODO: Open AI Actions Menu (Chat, Scan, etc.)
+      console.log('AI Orb Pressed');
+    }} />
+    </>
   );
 }
