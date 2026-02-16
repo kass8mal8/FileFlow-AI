@@ -3,7 +3,7 @@ import gmailService from "@/services/gmail";
 import { FileCategory, ProcessedFile, SyncStatus, UnreadEmail } from "@/types";
 import { appStorage } from "@/utils/storage";
 import {
-  Moon, Sun, Monitor, CircleCheck, AlertCircle, Clock, FileText, Mail, RefreshCw,
+  CircleCheck, AlertCircle, Clock, FileText, Mail, RefreshCw, Inbox,
 } from "lucide-react-native";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,6 +26,8 @@ import Animated, {
   Layout,
 } from "react-native-reanimated";
 import { useTheme } from "@/components/ThemeContext";
+import subscriptionService from "@/services/SubscriptionService";
+import { useRouter } from 'expo-router';
 
 const Logo = require("@/assets/images/logo.png");
  
@@ -141,12 +143,10 @@ export default function DashboardScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const { theme, preference, setPreference, colors } = useTheme();
+  const [isPro, setIsPro] = useState(false);
+  const [tier, setTier] = useState<string>('free');
 
-  const toggleTheme = () => {
-    const nextPref = theme === 'dark' ? 'light' : 'dark';
-    console.log(`[Dashboard] Toggling theme. Current theme: ${theme}, Next preference: ${nextPref}`);
-    setPreference(nextPref);
-  };
+
 
   const filteredFiles = useMemo(() => {
     if (!searchQuery) return files;
@@ -158,6 +158,10 @@ export default function DashboardScreen() {
 
   const loadData = useCallback(async () => {
     try {
+      await subscriptionService.initialize();
+      setIsPro(subscriptionService.isPro());
+      setTier(subscriptionService.getTier());
+      
       const [storedFiles, syncTime, unread] = await Promise.all([
         appStorage.getProcessedFiles(),
         appStorage.getLastSync(),
@@ -240,12 +244,15 @@ export default function DashboardScreen() {
           </View>
           
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <View style={{ backgroundColor: colors.surface, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 4 }}>
-               <Text style={{ fontSize: 8, color: colors.textSecondary, fontWeight: 'bold' }}>{theme.toUpperCase()}</Text>
-            </View>
-            <TouchableOpacity onPress={toggleTheme} style={[styles.syncButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              {theme === 'dark' ? <Sun size={18} color={colors.primary} /> : <Moon size={18} color={colors.primary} />}
-            </TouchableOpacity>
+            {(tier !== 'pro') && (
+              <TouchableOpacity 
+                onPress={() => router.push('/subscription')}
+                style={{ marginRight: 8 }}
+              >
+                {/* ProBadge component removed as per instruction to remove PaywallModal related components */}
+              </TouchableOpacity>
+            )}
+            
             <TouchableOpacity
               onPress={handleManualSync}
               disabled={isSyncing}
@@ -314,6 +321,37 @@ export default function DashboardScreen() {
             </View>
           </View>
         }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: colors.surface }]}>
+              <Inbox size={48} color={colors.textTertiary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {activeTab === 'files' ? 'No Files Yet' : 'All Caught Up!'}
+            </Text>
+            <Text style={[styles.emptyDescription, { color: colors.textSecondary }]}>
+              {activeTab === 'files' 
+                ? 'Your processed files will appear here. Tap the sync button to scan your emails for attachments, or check your sync settings to enable automatic background processing.'
+                : 'You have no emails requiring action at the moment. New unread emails will appear here when they arrive.'}
+            </Text>
+            {activeTab === 'files' && (
+              <TouchableOpacity 
+                onPress={handleManualSync}
+                disabled={isSyncing}
+                style={[styles.emptyActionButton, { backgroundColor: colors.primary }]}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <RefreshCw size={18} color="#fff" />
+                    <Text style={styles.emptyActionText}>Sync Now</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        }
       />
     </View>
   );
@@ -353,4 +391,12 @@ const styles = StyleSheet.create({
   aiBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   aiBadgeText: { fontSize: 10, fontWeight: '700' },
   statusIcon: { paddingLeft: 8 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 32 },
+  emptyIconContainer: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  emptyDescription: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 24 },
+  emptyActionButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  emptyActionText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
+
+// Note: PaywallModal should be added to the JSX before the closing </View> tag in the return statement

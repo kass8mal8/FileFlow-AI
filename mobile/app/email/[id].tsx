@@ -8,11 +8,14 @@ import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import gmailService from '../../services/gmail';
 import aiService from '../../services/AIService';
 import linkageService from '../../services/LinkageService';
+import subscriptionService from '../../services/SubscriptionService';
 import { ProcessedFile, UnreadEmail, SyncStatus } from '../../types';
 import { appStorage } from '../../utils/storage';
 import { useTheme } from '@/components/ThemeContext';
 import Skeleton from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
+import ProBadge from '@/components/ProBadge';
+import PaywallModal from '@/components/PaywallModal';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +32,8 @@ export default function EmailDetailScreen() {
   const [body, setBody] = useState<string>('');
   const { theme, colors } = useTheme();
   const toast = useToast();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState<string>('');
 
   // Navigation handlers
   const handleOpenRelatedFile = (file: ProcessedFile) => {
@@ -40,6 +45,7 @@ export default function EmailDetailScreen() {
   };
 
   useEffect(() => {
+    subscriptionService.initialize();
     loadContent();
   }, [id, type]);
 
@@ -78,12 +84,31 @@ export default function EmailDetailScreen() {
 
       // AI Analysis (Sequential or Parallel - Parallel for replies, streaming for others)
       const fetchReplies = async () => {
+        // Check quota
+        const quota = await subscriptionService.canUseAI('reply');
+        if (!quota.allowed) {
+          setPaywallFeature('Smart Replies');
+          setShowPaywall(true);
+          return;
+        }
+        
         const aiReplies = await aiService.generateReplies(fullBody || '', userName);
         setReplies(Array.isArray(aiReplies) ? aiReplies : []);
+        await subscriptionService.incrementUsage('reply');
       };
 
       // Summary Streaming
       const fetchSummary = async () => {
+        // Check quota
+        const quota = await subscriptionService.canUseAI('summary');
+        if (!quota.allowed) {
+          setPaywallFeature('AI Summaries');
+          setShowPaywall(true);
+          setSummary(`You've reached your daily limit of ${quota.limit} AI summaries. Upgrade to Pro for unlimited access.`);
+          setAiLoading(false);
+          return;
+        }
+        
         await aiService.generateSummary(fullBody || '', (text) => {
           setSummary(text.replace(/\[Your Name\]/g, userName));
           setAiLoading(false); // Stop summary skeleton as soon as text starts
@@ -263,6 +288,7 @@ export default function EmailDetailScreen() {
                 <Database size={16} color={colors.primary} />
               </View>
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Related Knowledge</Text>
+              {!subscriptionService.isPro() && <ProBadge size="small" />}
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.relatedScroll}>
               {relatedData.files.map((file, idx) => (
@@ -330,6 +356,13 @@ export default function EmailDetailScreen() {
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* Paywall Modal */}
+      <PaywallModal 
+        visible={showPaywall} 
+        onClose={() => setShowPaywall(false)}
+        feature={paywallFeature}
+      />
     </View>
   );
 }

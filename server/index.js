@@ -1,24 +1,29 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const aiRoutes = require('./routes/aiRoutes');
+const paymentRoutes = require('./routes/paymentRoutes'); // Import payment routes
 
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: '*', // For development, allow all. Could be refined to ['http://localhost:8081']
+  origin: ['http://localhost:8081', 'https://unpalatial-alfreda-trackable.ngrok-free.dev', '*'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 app.use(express.json());
 
-// Main Routes
+// Routes
 app.use('/api', aiRoutes);
+app.use('/api/payments', paymentRoutes); // Register payment routes
 
+app.get('/', (req, res) => {
+  res.send('FileFlow AI Server Running');
+});
 // Health check (Inline for simplicity or can be moved to its own route)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

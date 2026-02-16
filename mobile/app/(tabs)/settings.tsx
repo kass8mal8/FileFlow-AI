@@ -1,9 +1,10 @@
 import authService from "@/services/auth";
 import backgroundService from "@/services/background";
+import subscriptionService from "@/services/SubscriptionService"; // Import SubscriptionService
 import { appStorage } from "@/utils/storage";
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
-import { Moon, Sun, Monitor, Shield, Clock, LogOut } from "lucide-react-native";
+import { Moon, Sun, Monitor, Shield, Clock, LogOut, CreditCard, ChevronRight, Zap } from "lucide-react-native"; // Add CreditCard, ChevronRight, Zap
 import {
   Alert,
   ScrollView,
@@ -18,16 +19,17 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/components/ThemeContext";
-import React, { useEffect, useState } from "react";
+import ProBadge from "@/components/ProBadge"; // Import ProBadge
+import React, { useEffect, useState, useCallback } from "react"; // Add useCallback
 
 export default function SettingsScreen() {
   const [userInfo, setUserInfo] = useState<any>(null);
   const [isSyncRegistered, setIsSyncRegistered] = useState(false);
   const [syncPeriod, setSyncPeriod] = useState("30d");
+  const [isPro, setIsPro] = useState(false); // Add isPro state
   const { preference, setPreference, colors, theme } = useTheme();
 
-  useEffect(() => {
-    async function loadSettings() {
+  const loadData = useCallback(async () => {
       // First load from storage for immediate feedback
       const storedInfo = await appStorage.getUserInfo();
       setUserInfo(storedInfo);
@@ -37,14 +39,20 @@ export default function SettingsScreen() {
       setIsSyncRegistered(registered);
       setSyncPeriod(period);
 
+      // Check subscription status
+      await subscriptionService.initialize();
+      setIsPro(subscriptionService.isPro());
+
       // Then fetch fresh info from API to update profile picture etc.
       const freshInfo = await authService.refreshUserInfo();
       if (freshInfo) {
         setUserInfo(freshInfo);
       }
-    }
-    loadSettings();
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleLogout = () => {
     const performLogout = async () => {
@@ -134,6 +142,57 @@ export default function SettingsScreen() {
               </View>
             </LinearGradient>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <CreditCard size={16} color={colors.textSecondary} />
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Subscription</Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => {
+              if (!isPro) {
+                router.push('/subscription');
+              } else {
+                 // For testing/development: allow resetting subscription to Free
+                 Alert.alert(
+                  "Manage Subscription",
+                  "You are currently on the Pro plan.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                      text: "Reset to Free (Dev)", 
+                      style: "destructive",
+                      onPress: async () => {
+                        await subscriptionService.updateTier('free' as any);
+                        await loadData();
+                      }
+                    }
+                  ]
+                 );
+              }
+            }}
+          >
+            <View style={styles.row}>
+              <View style={[styles.iconBox, { backgroundColor: isPro ? '#FFD700' + '20' : colors.background }]}>
+                {isPro ? <Zap size={18} color="#FFA500" /> : <CreditCard size={18} color={colors.primary} />}
+              </View>
+              <View style={styles.settingTextContainer}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>
+                    {isPro ? "Pro Plan" : "Free Plan"}
+                  </Text>
+                  {isPro && <ProBadge size="small" />}
+                </View>
+                <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+                  {isPro ? "You have access to all features" : "Upgrade to unlock AI features"}
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>

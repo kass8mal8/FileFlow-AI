@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { STORAGE_KEYS } from './constants';
 import { AuthTokens, ProcessedFile } from '../types';
+import { SubscriptionState, UsageQuota } from '../types/subscription';
 
 /**
  * Secure storage for sensitive data (tokens)
@@ -161,6 +162,30 @@ export const appStorage = {
 
   async setThemePreference(theme: 'light' | 'dark' | 'system'): Promise<void> {
     await AsyncStorage.setItem(STORAGE_KEYS.THEME_PREFERENCE, theme);
+  },
+
+  /**
+   * Subscription State
+   */
+  async getSubscriptionState(): Promise<SubscriptionState | null> {
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.SUBSCRIPTION_STATE);
+    return data ? JSON.parse(data) : null;
+  },
+
+  async setSubscriptionState(state: SubscriptionState): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.SUBSCRIPTION_STATE, JSON.stringify(state));
+  },
+
+  /**
+   * Usage Quota
+   */
+  async getUsageQuota(): Promise<UsageQuota | null> {
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.USAGE_QUOTA);
+    return data ? JSON.parse(data) : null;
+  },
+
+  async setUsageQuota(quota: UsageQuota): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.USAGE_QUOTA, JSON.stringify(quota));
   },
 
   async clearAll(): Promise<void> {

@@ -38,6 +38,8 @@ export const STORAGE_KEYS = {
   SYNC_PERIOD: 'fileflow_sync_period',
   HISTORY_ID: 'fileflow_history_id',
   THEME_PREFERENCE: 'fileflow_theme_preference',
+  SUBSCRIPTION_STATE: 'fileflow_subscription_state',
+  USAGE_QUOTA: 'fileflow_usage_quota',
 };
 
 // Dropbox Configuration

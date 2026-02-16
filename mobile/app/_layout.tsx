@@ -105,7 +105,9 @@ function RootLayoutNav() {
       <ToastProvider>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+          <Stack.Screen name="subscription" options={{ headerShown: false }} />
         </Stack>
       </ToastProvider>
     </NavigationThemeProvider>
