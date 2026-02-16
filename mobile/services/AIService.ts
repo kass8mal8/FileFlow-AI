@@ -75,21 +75,31 @@ class AIService {
   }
 
   /**
-   * Extract action items (To-Do list)
+   * Extract action items (To-Do list) - Returns structured JSON
    */
-  async extractTodo(emailBody: string, onUpdate?: (text: string) => void, userName?: string): Promise<string> {
-    if (onUpdate) {
-      return await this.streamText('todo', emailBody, onUpdate, userName);
-    }
-
+  async extractTodo(emailBody: string, onUpdate?: (tasks: any[]) => void, userName?: string): Promise<any[]> {
+    const fallback = [];
+    
     try {
       const response = await axios.post(`${API_BASE_URL}/todo`, {
         text: emailBody,
         userName
       });
-      return response.data?.todoList || "No specific action items detected.";
+      
+      const todoList = response.data?.todoList;
+      
+      // Handle both JSON array and legacy string responses
+      if (Array.isArray(todoList)) {
+        return todoList;
+      } else if (typeof todoList === 'string') {
+        // Legacy fallback: parse string as single task
+        return todoList.trim() ? [{ task: todoList, priority: 'Medium', due_date: null }] : fallback;
+      }
+      
+      return fallback;
     } catch (error) {
-      return "No specific action items detected.";
+      console.error('Extract todo error:', error);
+      return fallback;
     }
   }
 }

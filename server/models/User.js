@@ -12,6 +12,37 @@ const UserSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  
+  // Subscription Management
+  subscription: {
+    tier: { 
+      type: String, 
+      enum: ['FREE', 'TRIAL', 'PRO'], 
+      default: 'FREE' 
+    },
+    status: { 
+      type: String, 
+      enum: ['active', 'expired', 'cancelled'], 
+      default: 'active' 
+    },
+    trialEndsAt: { type: Date },
+    proStartedAt: { type: Date }
+  },
+  
+  // Usage Tracking (Daily Limits)
+  usage: {
+    summaries: {
+      count: { type: Number, default: 0 },
+      limit: { type: Number, default: 5 }, // Free tier limit
+      resetAt: { type: Date }
+    },
+    replies: {
+      count: { type: Number, default: 0 },
+      limit: { type: Number, default: 10 },
+      resetAt: { type: Date }
+    }
+  },
+  
   preferences: {
     theme: { type: String, default: 'system' },
     notifications: { type: Boolean, default: true }
@@ -19,7 +50,17 @@ const UserSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
+});
+
+// Update timestamp on save
+UserSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
 });
 
 module.exports = mongoose.model('User', UserSchema);

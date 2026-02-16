@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator, StatusBar, Linking, TextInput, KeyboardAvoidingView } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { Mail, ArrowLeft, Send, Sparkles, CheckSquare, Clock, Shield, Briefcase, User, Calendar, Paperclip, ChevronRight, FileText, Link, Database, ChevronLeft, ExternalLink, Bot } from 'lucide-react-native';
+import { Mail, ArrowLeft, Send, Sparkles, CheckSquare, Clock, Shield, Briefcase, User, Calendar as CalendarIcon, Paperclip, ChevronRight, FileText, Link, Database, ChevronLeft, ExternalLink, Bot } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import gmailService from '../../services/gmail';
@@ -17,6 +17,8 @@ import { useToast } from '@/components/Toast';
 import ProBadge from '@/components/ProBadge';
 import PaywallModal from '@/components/PaywallModal';
 import { SmartHeader } from '@/components/SmartHeader';
+import * as Calendar from 'expo-calendar';
+import { API_BASE_URL } from '@/utils/constants';
 
 const { width } = Dimensions.get('window');
 
@@ -28,9 +30,12 @@ export default function EmailDetailScreen() {
   const [item, setItem] = useState<ProcessedFile | UnreadEmail | null>(null);
   const [summary, setSummary] = useState<string>('');
   const [replies, setReplies] = useState<string[]>([]);
-  const [todoList, setTodoList] = useState<string>('');
+  const [todoList, setTodoList] = useState<any[]>([]);
+  const [todoConfidence, setTodoConfidence] = useState<number>(0);
+  const [summaryConfidence, setSummaryConfidence] = useState<number>(0);
   const [relatedData, setRelatedData] = useState<{ files: ProcessedFile[], threads: any[] }>({ files: [], threads: [] });
   const [body, setBody] = useState<string>('');
+  const [showAllTodos, setShowAllTodos] = useState<boolean>(false);
   const { theme, colors } = useTheme();
   const toast = useToast();
   const [chatMessages, setChatMessages] = useState<{id: string, text: string, sender: 'user' | 'ai'}[]>([]);
@@ -158,29 +163,50 @@ export default function EmailDetailScreen() {
         await subscriptionService.incrementUsage('reply');
       };
 
-      // Summary Streaming
-      const fetchSummary = async () => {
-        // Check quota
-        const quota = await subscriptionService.canUseAI('summary');
-        if (!quota.allowed) {
-          setPaywallFeature('AI Summaries');
-          setShowPaywall(true);
-          setSummary(`You've reached your daily limit of ${quota.limit} AI summaries. Upgrade to Pro for unlimited access.`);
-          setAiLoading(false);
-          return;
-        }
-        
-        await aiService.generateSummary(fullBody || '', (text) => {
-          setSummary(text.replace(/\[Your Name\]/g, userName));
-          setAiLoading(false); // Stop summary skeleton as soon as text starts
-        });
-      };
+      // NEW: Comprehensive Analysis (uses EmailAnalysis for instant retrieval)
+      const fetchAllAnalysis = async () => {
+        try {
+          const quota = await subscriptionService.canUseAI('summary'); // Check quota for summary as it's the primary AI feature
+          if (!quota.allowed) {
+            setPaywallFeature('AI Summaries');
+            setShowPaywall(true);
+            setSummary(`You've reached your daily limit of ${quota.limit} AI summaries. Upgrade to Pro for unlimited access.`);
+            setAiLoading(false);
+            return;
+          }
 
-      // Todo Streaming
-      const fetchTodo = async () => {
-        await aiService.extractTodo(fullBody || '', (text) => {
-          setTodoList(text);
-        });
+          const response = await fetch(`${API_BASE_URL}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              text: fullBody || '', 
+              emailId: id,
+              userId: userInfo?.email,
+              userName 
+            })
+          });
+          const data = await response.json();
+          
+          // Update all states from single response
+          setSummary(data.summary || '');
+          setSummaryConfidence(data.summaryConfidence || 0);
+          setReplies(data.replies || []);
+          setTodoList(data.actionItems || []);
+          setTodoConfidence(data.todoConfidence || 0);
+          
+          console.log(data.cached ? '📦 Loaded from database' : '🤖 Generated new analysis');
+          console.log('📊 Confidence Scores:', { 
+            summary: data.summaryConfidence, 
+            todo: data.todoConfidence 
+          });
+          await subscriptionService.incrementUsage('summary'); // Increment usage after successful analysis
+        } catch (error) {
+          console.error('Comprehensive analysis error:', error);
+          // Fallback to individual calls if /analyze fails (though this should ideally be handled by the backend)
+          // For now, we'll just log the error and let the UI show empty states or previous data.
+        } finally {
+          setAiLoading(false);
+        }
       };
 
       // Linkage Fetching
@@ -195,7 +221,11 @@ export default function EmailDetailScreen() {
         }
       };
 
-      await Promise.all([fetchReplies(), fetchSummary(), fetchTodo(), fetchLinkage()]);
+       // Execute all fetches in parallel
+      await Promise.all([
+        fetchAllAnalysis(), // Single comprehensive call
+        fetchLinkage()
+      ]);
 
       // Intent Detection
       const fetchIntent = async () => {
@@ -230,28 +260,95 @@ export default function EmailDetailScreen() {
     }
   };
 
-  const handleSmartReply = async (reply: string) => {
+  const handleSmartReply = async (reply: string, action: 'draft' | 'send') => {
     if (drafting) return;
+    
+    // Pro Check for sending
+    if (action === 'send' && !subscriptionService.isPro()) {
+        setPaywallFeature('Direct Send');
+        setShowPaywall(true);
+        return;
+    }
+
     try {
       setDrafting(reply);
-      const emailId = type === 'file' ? (item as ProcessedFile).messageId : (item as UnreadEmail).id;
       const threadId = type === 'file' ? (item as ProcessedFile).threadId : (item as UnreadEmail).threadId;
       const from = type === 'file' ? (item as ProcessedFile).emailFrom : (item as UnreadEmail).from;
       const subject = type === 'file' ? (item as ProcessedFile).emailSubject : (item as UnreadEmail).subject;
 
-      await gmailService.createDraft(
-        threadId!,
-        from!,
-        subject!,
-        reply
-      );
+      if (action === 'draft') {
+          await gmailService.createDraft(
+            threadId!,
+            from!,
+            subject!,
+            reply
+          );
+          toast.show("Draft saved to Gmail!");
+      } else {
+          await gmailService.sendEmail(
+            threadId!,
+            from!,
+            subject!,
+            reply
+          );
+          toast.show("Email sent successfully!", "success");
+          // Optionally remove the replied item or update UI
+          router.back();
+      }
 
-      toast.show("Draft saved to Gmail!");
     } catch (error) {
-      console.error("Error creating draft:", error);
-      toast.show("Failed to create draft", "error");
+      console.error(`Error ${action}ing:`, error);
+      toast.show(`Failed to ${action} email`, "error");
     } finally {
       setDrafting(null);
+    }
+  };
+
+  const handleAddToCalendar = async (task: any) => {
+    // Pro Check
+    if (!subscriptionService.isPro()) {
+      setPaywallFeature('Calendar Integration');
+      setShowPaywall(true);
+      return;
+    }
+
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        toast.show('Calendar permission required', 'error');
+        return;
+      }
+
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const defaultCalendar = calendars.find(cal => cal.allowsModifications) || calendars[0];
+
+      if (!defaultCalendar) {
+        toast.show('No calendar found', 'error');
+        return;
+      }
+
+      // Parse due date (assuming format like "Feb 20, 2026" or ISO string)
+      const dueDate = new Date(task.due_date);
+      if (isNaN(dueDate.getTime())) {
+        toast.show('Invalid due date', 'error');
+        return;
+      }
+
+      // Set reminder based on priority
+      const reminderMinutes = task.priority === 'High' ? -60 : task.priority === 'Medium' ? -30 : -15;
+
+      await Calendar.createEventAsync(defaultCalendar.id, {
+        title: task.task,
+        startDate: dueDate,
+        endDate: new Date(dueDate.getTime() + 60 * 60 * 1000), // 1 hour duration
+        notes: `Priority: ${task.priority}\nFrom: FileFlow AI`,
+        alarms: [{ relativeOffset: reminderMinutes }]
+      });
+
+      toast.show('Added to calendar!', 'success');
+    } catch (error) {
+      console.error('Calendar error:', error);
+      toast.show('Failed to add to calendar', 'error');
     }
   };
 
@@ -325,6 +422,13 @@ export default function EmailDetailScreen() {
               <Sparkles size={16} color={colors.primary} />
             </View>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Insights</Text>
+            {summaryConfidence > 0 && (
+              <View style={[styles.confidenceBadge, { backgroundColor: summaryConfidence > 0.7 ? '#10B981' : '#F59E0B' + '20' }]}>
+                <Text style={[styles.confidenceText, { color: summaryConfidence > 0.7 ? '#10B981' : '#F59E0B' }]}>
+                  {Math.round(summaryConfidence * 100)}% Confident
+                </Text>
+              </View>
+            )}
           </View>
           
           {summary.length === 0 ? (
@@ -346,6 +450,13 @@ export default function EmailDetailScreen() {
               <CheckSquare size={16} color={colors.primary} />
             </View>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Action Items</Text>
+            {todoConfidence > 0 && (
+              <View style={[styles.confidenceBadge, { backgroundColor: todoConfidence > 0.7 ? '#10B981' : '#F59E0B' + '20' }]}>
+                <Text style={[styles.confidenceText, { color: todoConfidence > 0.7 ? '#10B981' : '#F59E0B' }]}>
+                  {Math.round(todoConfidence * 100)}% Confident
+                </Text>
+              </View>
+            )}
           </View>
           
           {todoList.length === 0 ? (
@@ -357,44 +468,112 @@ export default function EmailDetailScreen() {
           ) : (
             <View style={[styles.todoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.todoContent}>
-                {todoList.split('\n').filter(l => l.trim()).map((line, i) => {
-                  const cleanLine = line.replace(/^-\s*\[\s*\]\s*/, '▫️ ').replace(/^-\s*\[x\]\s*/, '✅ ').replace(/^\*\s*/, '• ');
+                {(showAllTodos ? todoList : todoList.slice(0, 3)).map((task, i) => {
+                  const priorityColor = task.priority === 'High' ? '#FF4C4C' : task.priority === 'Medium' ? '#FF9500' : '#007AFF';
                   return (
                     <Animated.View key={i} entering={FadeInRight.delay(300 + i * 50)} style={styles.todoItemRow}>
-                      <Text style={[styles.todoText, { color: colors.text }]}>
-                        {cleanLine.split(' ').map((word, wi) => (
-                          <Text key={wi} style={word.includes('[High]') ? { color: '#FF4C4C', fontWeight: '700' } : word.includes('(Due:') ? { color: colors.primary, fontStyle: 'italic' } : {}}>
-                            {word}{' '}
-                          </Text>
-                        ))}
-                      </Text>
+                      <View style={[styles.priorityBadge, { backgroundColor: priorityColor + '20' }]}>
+                        <Text style={[styles.priorityText, { color: priorityColor }]}>{task.priority}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.todoText, { color: colors.text }]}>{task.task}</Text>
+                        {task.due_date && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                            <Text style={[styles.dueDateText, { color: colors.textSecondary }]}>📅 {task.due_date}</Text>
+                            <TouchableOpacity 
+                              onPress={() => handleAddToCalendar(task)}
+                              activeOpacity={0.7}
+                            >
+                              <LinearGradient
+                                colors={[colors.primary, colors.primaryLight]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.calendarBtnGradient}
+                              >
+                                <CalendarIcon size={14} color="#fff" />
+                                <Text style={styles.calendarBtnText}>Add to Calendar</Text>
+                                {!subscriptionService.isPro() && <ProBadge mini style={{ marginLeft: 4 }} />}
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
                     </Animated.View>
                   );
                 })}
+                
+                {todoList.length > 3 && (
+                  <TouchableOpacity 
+                    onPress={() => setShowAllTodos(!showAllTodos)}
+                    style={[styles.viewMoreBtn, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}
+                  >
+                    <Text style={[styles.viewMoreText, { color: colors.primary }]}>
+                      {showAllTodos ? `Show Less` : `View ${todoList.length - 3} More`}
+                    </Text>
+                    <ChevronRight 
+                      size={16} 
+                      color={colors.primary} 
+                      style={{ transform: [{ rotate: showAllTodos ? '-90deg' : '90deg' }] }}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
         </Animated.View>
 
-        {/* Smart Replies (Restored & Concise) */}
+        {/* Smart Replies (Enhanced with Direct Send) */}
         {replies.length > 0 && (
           <Animated.View entering={FadeInDown.delay(300)} style={styles.repliesSection}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginBottom: 12 }]}>Quick Reply</Text>
             <View style={styles.repliesContainer}>
                 {replies.map((reply, index) => (
-                  <TouchableOpacity
+                  <View
                     key={index}
-                    style={[styles.replyButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                    onPress={() => handleSmartReply(reply)}
-                    disabled={!!drafting}
+                    style={[styles.replyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
                   >
-                    <Text style={[styles.replyButtonText, { color: colors.primary }]} numberOfLines={2}>{reply}</Text>
-                    {drafting === reply ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Send size={14} color={colors.primary} />
-                    )}
-                  </TouchableOpacity>
+                    <Text style={[styles.replyBody, { color: colors.text }]}>{reply}</Text>
+                    
+                    <View style={styles.replyActions}>
+                      <TouchableOpacity 
+                        onPress={() => handleSmartReply(reply, 'draft')}
+                        disabled={!!drafting}
+                        activeOpacity={0.7}
+                        style={{ flex: 1 }}
+                      >
+                        <BlurView 
+                          intensity={20} 
+                          tint={theme === 'dark' ? 'dark' : 'light'}
+                          style={[styles.actionBtnBlur, { borderColor: colors.border }]}
+                        >
+                          <FileText size={16} color={colors.text} />
+                          <Text style={[styles.actionBtnText, { color: colors.text, fontWeight: '600' }]}>Draft</Text>
+                        </BlurView>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity 
+                        onPress={() => handleSmartReply(reply, 'send')}
+                        disabled={!!drafting}
+                        activeOpacity={0.7}
+                        style={{ flex: 1 }}
+                      >
+                        <LinearGradient
+                          colors={[colors.primary, colors.primaryLight]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.sendBtnGradient}
+                        >
+                          {drafting === reply ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Send size={16} color="#fff" />
+                          )}
+                          <Text style={[styles.actionBtnText, { color: '#fff', fontWeight: '700' }]}>Send</Text>
+                          {!subscriptionService.isPro() && <ProBadge mini style={{marginLeft: 4}} />}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ))}
             </View>
           </Animated.View>
@@ -492,6 +671,8 @@ const styles = StyleSheet.create({
   summarySection: { marginBottom: 32 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 },
   sparkleContainer: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  confidenceBadge: { marginLeft: 'auto', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  confidenceText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   todoSection: { marginBottom: 32 },
   todoIconContainer: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
@@ -499,14 +680,76 @@ const styles = StyleSheet.create({
   summaryText: { fontSize: 15, lineHeight: 24, fontWeight: '500' },
   todoCard: { borderRadius: 16, padding: 20, borderWidth: 1, overflow: 'hidden' },
   todoContent: { gap: 12 },
-  todoItemRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  todoText: { fontSize: 14, lineHeight: 24, fontWeight: '500', letterSpacing: 0.2 },
-  todoText: { fontSize: 14, lineHeight: 24, fontWeight: '500', letterSpacing: 0.2 },
+  todoItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 8 },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
+  priorityText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  todoText: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: 0.2 },
+  dueDateText: { fontSize: 12, fontWeight: '600', color: '#666' },
+  calendarBtnGradient: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 6, 
+    paddingHorizontal: 12, 
+    paddingVertical: 8, 
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  calendarBtnText: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#fff',
+    letterSpacing: 0.3
+  },
   contentSection: { marginTop: 12 },
   contentCard: { padding: 20, borderRadius: 22, borderWidth: 1, borderStyle: 'dashed' },
   bodyText: { fontSize: 14, lineHeight: 22, fontWeight: '500' },
   repliesSection: { marginBottom: 24 },
   repliesContainer: { gap: 8 },
+  replyCard: { padding: 16, borderRadius: 18, marginBottom: 8, borderWidth: 1 },
+  replyBody: { fontSize: 14, lineHeight: 22, fontWeight: '500', marginBottom: 12 },
+  replyActions: { flexDirection: 'row', gap: 12 },
+  viewMoreBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 8, 
+    paddingVertical: 12, 
+    paddingHorizontal: 16, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    marginTop: 12 
+  },
+  viewMoreText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  actionBtnBlur: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden'
+  },
+  sendBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5
+  },
+  actionBtnText: { fontSize: 14, letterSpacing: 0.3 },
   replyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16 },
   replyButtonText: { fontSize: 13, fontWeight: '600', flex: 1, marginRight: 12 },
   chatSection: { marginBottom: 32 },

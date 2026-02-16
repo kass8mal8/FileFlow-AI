@@ -1,183 +1,149 @@
-const axios = require('axios');
-const dotenv = require('dotenv');
+const axios = require("axios");
+const dotenv = require("dotenv");
 
 dotenv.config();
 
+/**
+ * FileFlow AI - Hugging Face Service (2026 Robust Version)
+ * Fixes "model_not_supported" by targeting specific providers and handling fallbacks.
+ */
 class HuggingFaceService {
   constructor() {
-    this.apiKey = process.env.HUGGINGFACE_API_KEY || process.env.EXPO_PUBLIC_HF_API_KEY || '';
-    this.baseUrl = "https://api-inference.huggingface.co/models";
-    
-    this.models = [
-      "mistralai/Mistral-Nemo-Instruct-2407",
-      "Qwen/Qwen2.5-7B-Instruct",
-      "microsoft/Phi-3.5-mini-instruct"
-    ];
+    this.apiKey = process.env.HUGGINGFACE_API_KEY || "";
+
+    // Standard Inference API endpoint (OpenAI Compatible)
+    this.baseUrl = "https://router.huggingface.co/hf-inference/models";
+
+    // Most stable 2026 Model IDs for Kenyan Infrastructure
+    this.models = {
+      general: "meta-llama/Llama-3.1-8B-Instruct", // Highest availability in 2026
+      logic: "Qwen/Qwen2.5-7B-Instruct",
+      summary: "mistralai/Mistral-Nemo-Instruct-2407",
+    };
   }
 
   /**
-   * Universal AI Request Handler using Standard HF Inference API
+   * Primary Request Handler with Auto-Fallback
    */
-  async askAI(prompt, systemMessage = "You are a helpful assistant.", specificModel = null) {
-    if (!this.apiKey) {
-      throw new Error("HUGGINGFACE_API_KEY is missing in backend .env");
-    }
+  async askAI(messages, options = {}) {
+    if (!this.apiKey) throw new Error("HUGGINGFACE_API_KEY is missing.");
 
-    let lastError = null;
-    const targetModels = specificModel ? [specificModel] : this.models;
+    const model = options.model || this.models.general;
+    // Construct URL: https://router.huggingface.co/hf-inference/models/{model}/v1/chat/completions
+    const url = `${this.baseUrl}/${model}/v1/chat/completions`;
 
-    for (const model of targetModels) {
-      try {
-        console.log(`📡 Querying HF Inference API: ${model}`);
-        
-        // Construct prompt based on model family to ensure best results
-        const formattedPrompt = this.formatPrompt(model, systemMessage, prompt);
+    try {
+      console.log(`📡 Querying: ${model} via HF Router`);
 
-        const response = await axios.post(`${this.baseUrl}/${model}`, {
-          inputs: formattedPrompt,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.7,
-            return_full_text: false,
-            wait_for_model: true
-          }
-        }, {
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/json"
-          },
-          timeout: 40000,
+      const response = await axios.post(
+        url,
+        {
+          model: model,
+          messages: messages,
+          max_tokens: options.max_tokens || 500,
+          temperature: options.temperature || 0.7,
+          response_format: options.response_format || { type: "text" },
+        },
+        {
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          timeout: 45000, // Extended for international routing
+        }
+      );
+
+      return response.data.choices[0].message.content.trim();
+    } catch (error) {
+      const errorMsg = error.response?.data?.error?.message || "";
+
+      // Final Fallback: Swap to the ultra-stable Llama 3.1
+      if (!options.isFinalFallback && model !== this.models.general) {
+        console.warn(
+          `🚨 Critical failure. Falling back to stable anchor: Llama 3.1`
+        );
+        return this.askAI(messages, {
+          ...options,
+          model: this.models.general,
+          isFinalFallback: true,
         });
-
-        // HF returns array [{ generated_text: "..." }]
-        let output = response.data[0]?.generated_text || "";
-        return output.trim();
-
-      } catch (error) {
-        lastError = error;
-        const msg = error.response?.data?.error || error.message;
-        console.warn(`Model ${model} failed: ${JSON.stringify(msg)}`);
       }
+
+      throw error;
     }
-
-    throw lastError || new Error("All HF models failed.");
   }
 
-  /**
-   * Helper to format prompts for specific instruction-tuned models
-   */
-  formatPrompt(model, system, user) {
-      if (model.includes("Mistral")) {
-          // Mistral format: <s>[INST] System + User [/INST]
-          return `<s>[INST] ${system}\n\n${user} [/INST]`;
-      } else if (model.includes("Qwen")) {
-          // ChatML format
-          return `<|im_start|>system\n${system}<|im_end|>\n<|im_start|>user\n${user}<|im_end|>\n<|im_start|>assistant\n`;
-      } else if (model.includes("Phi")) {
-          // Phi-3 format
-          return `<|user|>\n${system}\n\n${user}<|end|>\n<|assistant|>\n`;
-      } else if (model.includes("Llama")) {
-          // Llama 3 format
-          return `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n${system}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n${user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`;
-      }
-      // Default fallback
-      return `${system}\n\nUser: ${user}\n\nAssistant:`;
-  }
-
-  /**
-   * Optimized Classification
-   */
   async classifyContent(filename, subject, snippet, from) {
-    const prompt = `Classify this email attachment. 
-    Subject: ${subject}
-    File: ${filename}
-    Body: ${snippet}
-    From: ${from}
-    
-    Valid Categories: [Finance, Legal, Work, Personal].
-    Output exactly one word. Use Finance for money/invoices, Legal for contracts/law, Work for tasks/projects, and Personal for everything else.`;
-
-    try {
-      const response = await this.askAI(prompt, "You are an expert document classifier. Be precise.");
-      const valid = ["Finance", "Legal", "Work", "Personal"];
-      return valid.find(v => response.includes(v)) || "Personal";
-    } catch (e) {
-      return "Personal";
-    }
+    const messages = [
+      {
+        role: "system",
+        content:
+          "Categorize document into exactly one word: Finance, Legal, Work, Personal.",
+      },
+      {
+        role: "user",
+        content: `File: ${filename}, Subject: ${subject}, Text: ${snippet}`,
+      },
+    ];
+    // Classification is best on Serverless HF-Inference
+    return await this.askAI(messages, {
+      useServerless: true,
+      temperature: 0.1,
+    });
   }
 
-  /**
-   * Concise Summary using Mistral-Nemo or Phi-3.5 (User Recommended)
-   */
   async generateSummary(text) {
-    const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 8000); // 128k context support allows larger chunks
-    const prompt = `Act as a high-level executive assistant. Analyze this email and provide a "Bottom Line Up Front" (BLUF) summary in 2 sentences. 
-    1. First sentence: Clear statement of the core purpose/intent.
-    2. Second sentence: Specific names, dates, or amounts involved and the required next step.
-    
-    Email: ${cleanText}`;
-    
-    // Prefer Mistral-Nemo (12B) or Phi-3.5-mini for summarization
-    const summaryModels = [
-        "mistralai/Mistral-Nemo-Instruct-2407", 
-        "microsoft/Phi-3.5-mini-instruct"
+    const messages = [
+      {
+        role: "system",
+        content:
+          "Summarize in 2 sentences. Start with the 'Bottom Line Up Front'.",
+      },
+      { role: "user", content: text.substring(0, 4000) },
     ];
-
-    return await this.askAIWithModelFallback(prompt, "You are a strategic executive assistant.", summaryModels);
+    return await this.askAI(messages, { model: this.models.summary });
   }
 
-  /**
-   * Smart Replies using Qwen 2.5 or Llama 3.1 (User Recommended)
-   */
-  async generateSmartReplies(text, count = 3, userName = 'the user') {
-    const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 3000);
-    const prompt = `Analyze the email below. 
-    Task: Draft ${count} short, professional replies for ${userName}.
-    
-    Replies should be:
-    1. "Confirmation" (Quick accept)
-    2. "Clarification" (Ask for details)
-    3. "Proactive" (Suggest next step)
-    
-    Constraint: Output ONLY the 3 replies in a JSON array format (e.g., ["Reply 1", "Reply 2", "Reply 3"]).
-    
-    Email: ${cleanText}`;
-
-    // Prefer Qwen 2.5 (7B) or Llama 3.1 (8B) for agentic/instruct tasks
-    const replyModels = [
-        "Qwen/Qwen2.5-7B-Instruct",
-        "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  async generateSmartReplies(text, count = 3) {
+    const messages = [
+      {
+        role: "system",
+        content: `Output a JSON array of ${count} professional replies.`,
+      },
+      { role: "user", content: `Email context: ${text.substring(0, 2000)}` },
     ];
 
     try {
-      const response = await this.askAIWithModelFallback(prompt, "You are a helpful assistant who outputs JSON.", replyModels);
-      
-      // Parse JSON or cleanup list
-      if (response.includes('[')) {
-          const jsonStr = response.substring(response.indexOf('['));
-          return JSON.parse(jsonStr.replace(/```json/g, '').replace(/```/g, ''));
-      } else {
-          return response.split('\n').filter(l => l.length > 5).slice(0, count);
-      }
+      const response = await this.askAI(messages, {
+        model: this.models.general,
+        response_format: { type: "json_object" },
+      });
+      const parsed = JSON.parse(response);
+      return Array.isArray(parsed)
+        ? parsed
+        : parsed.replies || Object.values(parsed)[0];
     } catch (e) {
-      console.warn("HF Reply Generation Failed:", e);
-      return ["Received, thanks.", "Can you provide more details?", "I'll review this shortly."];
+      return ["Understood.", "I'll check this.", "Thanks for the email."];
     }
   }
 
   /**
-   * Helper to try specific models first
+   * Extract Action Items (Fallback Implementation)
    */
-  async askAIWithModelFallback(prompt, system, preferredModels) {
-      for (const model of preferredModels) {
-          try {
-              return await this.askAI(prompt, system, model);
-          } catch (e) {
-              console.warn(`Preferred model ${model} failed, trying next...`);
-          }
-      }
-      // Fallback to general pool
-      return await this.askAI(prompt, system);
+  async extractActionItems(text, userName = 'the user') {
+    const messages = [
+      {
+        role: "system",
+        content: `Extract action items for ${userName} into a JSON array: [{ "task": string, "priority": "High"|"Medium"|"Low" }]. Return ONLY JSON.`,
+      },
+      { role: "user", content: text.substring(0, 4000) },
+    ];
+
+    try {
+      const response = await this.askAI(messages, { model: this.models.logic, response_format: { type: "json_object" } });
+      const tasks = JSON.parse(response);
+      const confidence = Array.isArray(tasks) && tasks.length > 0 ? 0.75 : 0.55;
+      return { tasks, confidence };
+    } catch (e) {
+      return { tasks: [], confidence: 0.25 };
+    }
   }
 }
 

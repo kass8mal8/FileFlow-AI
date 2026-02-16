@@ -367,6 +367,47 @@ class GmailService {
   }
 
   /**
+   * Send an email immediately
+   */
+  async sendEmail(threadId: string, to: string, subject: string, body: string): Promise<void> {
+    try {
+      const accessToken = await authService.getValidAccessToken();
+      if (!accessToken) throw new Error('No valid access token');
+
+      // Simple RFC 2822 message format
+      const rawMessage = [
+        `To: ${to}`,
+        `Subject: Re: ${subject}`,
+        `In-Reply-To: ${threadId}`,
+        `References: ${threadId}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        '',
+        body,
+      ].join('\n');
+
+      // Base64URL encode the message
+      const encodedMessage = base64Encode(rawMessage)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      await axios.post(
+        `${GMAIL_API_BASE}/users/me/messages/send`,
+        {
+          raw: encodedMessage,
+          threadId: threadId
+        },
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+    } catch (error) {
+      console.error('Error sending email:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Mark email as read
    */
   async markAsRead(messageId: string): Promise<void> {

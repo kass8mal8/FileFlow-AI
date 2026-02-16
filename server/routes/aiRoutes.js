@@ -9,6 +9,9 @@ router.post('/todo', aiController.extractTodo);
 router.post('/search', aiController.search);
 router.get('/models', aiController.getModels);
 
+// NEW: Comprehensive Analysis (uses EmailAnalysis model)
+router.post('/analyze', aiController.analyzeEmail);
+
 // File Upload Configuration
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });

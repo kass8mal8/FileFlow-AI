@@ -1,5 +1,6 @@
 const aiService = require('../services/aiService');
 const ragService = require('../services/ragService');
+const userService = require('../services/userService');
 
 class AIController {
   /**
@@ -24,6 +25,40 @@ class AIController {
     } catch (error) {
       console.error('Controller Classification Error:', error);
       res.status(500).json({ error: 'Failed to process classification' });
+    }
+  }
+
+  /**
+   * NEW: Comprehensive Email Analysis (uses EmailAnalysis model)
+   */
+  async analyzeEmail(req, res) {
+    try {
+      const { text, emailId, userId, userName } = req.body;
+      
+      if (!text || !emailId || !userId) {
+        return res.status(400).json({ error: 'text, emailId, and userId are required' });
+      }
+
+      // Get or create comprehensive analysis
+      const analysis = await aiService.getOrCreateAnalysis(emailId, userId, text, userName || 'User');
+      
+      if (analysis) {
+        return res.json({
+          summary: analysis.summary.text,
+          summaryConfidence: analysis.summary.confidence,
+          replies: analysis.replies,
+          actionItems: analysis.actionItems,
+          todoConfidence: 0.8, // Can be calculated from actionItems
+          intent: analysis.intent,
+          cached: analysis.accessCount > 1
+        });
+      }
+
+      // Fallback if analysis creation failed
+      return res.status(500).json({ error: 'Failed to analyze email' });
+    } catch (error) {
+      console.error('Analyze email error:', error);
+      res.status(500).json({ error: 'Analysis failed' });
     }
   }
 
@@ -106,8 +141,8 @@ class AIController {
         return res.end();
       }
 
-      const todoList = await aiService.extractActionItems(text, userName);
-      res.json({ todoList });
+      const result = await aiService.extractActionItems(text, userName);
+      res.json({ todoList: result.tasks || result, confidence: result.confidence || 0.5 });
     } catch (error) {
       console.error('Error in extractTodo:', error);
       res.status(500).json({ error: 'Failed' });

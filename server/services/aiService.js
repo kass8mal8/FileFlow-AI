@@ -15,6 +15,7 @@ const hasGemini = !!process.env.GEMINI_API_KEY;
 const hasHuggingFace = !!process.env.HUGGINGFACE_API_KEY;
 
 const AICache = require('../models/AICache');
+const EmailAnalysis = require('../models/EmailAnalysis');
 
 const DEFAULT_SUMMARY = "This message contains information that may need your attention. Review the content for key points and any requested actions.";
 const DEFAULT_REPLIES = ["Thanks for reaching out!", "Acknowledged, I'm on it.", "Will review and reply by EOD."];
@@ -65,6 +66,64 @@ class UnifiedAIService {
     } catch (e) {
       console.error(`Cache Error (${type}):`, e.message);
       return await generatorFn(); // Fallback to fresh generation
+    }
+  }
+
+  /**
+   * NEW: Check EmailAnalysis (permanent storage) or generate and save
+   */
+  async getOrCreateAnalysis(emailId, userId, text, userName) {
+    try {
+      if (!emailId || !userId) {
+        console.warn('Missing emailId or userId, skipping permanent storage');
+        return null;
+      }
+
+      // 1. Check if analysis exists
+      let analysis = await EmailAnalysis.findOne({ emailId, userId });
+      
+      if (analysis) {
+        // Update access tracking
+        analysis.lastAccessed = new Date();
+        analysis.accessCount += 1;
+        await analysis.save();
+        
+        console.log(`📦 Retrieved analysis for ${emailId} (accessed ${analysis.accessCount} times)`);
+        return analysis;
+      }
+
+      // 2. Generate all AI content
+      console.log(`🤖 Generating new analysis for ${emailId}`);
+      
+      const [summaryResult, replies, actionItemsResult, intent] = await Promise.all([
+        summaryAgent.execute(text, {}).catch(() => ({ summary: DEFAULT_SUMMARY, confidence: 0.5 })),
+        this.generateSmartReplies(text, 3, userName).catch(() => DEFAULT_REPLIES),
+        this.extractActionItems(text, userName).catch(() => ({ tasks: [], confidence: 0 })),
+        this.detectIntent(text, emailId).catch(() => ({ intent: 'INFO', confidence: 0, details: {} }))
+      ]);
+
+      // 3. Save to EmailAnalysis (permanent)
+      analysis = await EmailAnalysis.create({
+        emailId,
+        userId,
+        summary: {
+          text: typeof summaryResult === 'string' ? summaryResult : (summaryResult.summary || DEFAULT_SUMMARY),
+          confidence: summaryResult.confidence || 0.85 // Default high confidence if not provided
+        },
+        replies: Array.isArray(replies) ? replies : DEFAULT_REPLIES,
+        actionItems: actionItemsResult.tasks || [],
+        intent: {
+          type: intent.intent || 'INFO',
+          confidence: intent.confidence || 0,
+          details: intent.details || {}
+        }
+      });
+
+      console.log(`✅ Saved analysis for ${emailId} with confidence: ${analysis.summary.confidence}`);
+      return analysis;
+    } catch (error) {
+      console.error('EmailAnalysis error:', error.message);
+      return null;
     }
   }
 
@@ -130,7 +189,7 @@ class UnifiedAIService {
         console.warn('HuggingFace extraction failed:', err.message);
       }
     }
-    return "No specific action items detected.";
+    return { tasks: [], confidence: 0 };
   }
 
   async *generateSummaryStream(text, customPrompt) {
