@@ -251,7 +251,7 @@ class GeminiService {
     if (prompt.includes("Summarize"))
       return "AI service is currently waking up. Summary unavailable.";
     if (prompt.includes("To-Do"))
-      return "No specific action items detected (AI offline).";
+      return "[]"; // Return valid JSON array for empty tasks
 
     // Handle JSON requirements to prevent parsing errors
     if (prompt.includes("JSON")) {

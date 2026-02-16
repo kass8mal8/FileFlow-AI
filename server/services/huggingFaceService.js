@@ -125,24 +125,66 @@ class HuggingFaceService {
   }
 
   /**
-   * Extract Action Items (Fallback Implementation)
+   * Extract Action Items (Provider Parity with Gemini)
    */
   async extractActionItems(text, userName = 'the user') {
-    const messages = [
-      {
-        role: "system",
-        content: `Extract action items for ${userName} into a JSON array: [{ "task": string, "priority": "High"|"Medium"|"Low" }]. Return ONLY JSON.`,
-      },
-      { role: "user", content: text.substring(0, 4000) },
-    ];
+    const prompt = `Extract action items from this email for ${userName}.
+
+Email:
+${text}
+
+Return a JSON object with this exact structure:
+{
+  "tasks": [
+    {
+      "task": "Brief description",
+      "priority": "High|Medium|Low",
+      "due_date": "YYYY-MM-DD or null"
+    }
+  ],
+  "confidence": 0.0-1.0
+}
+
+Rules:
+- Only extract explicit tasks/action items
+- Infer priority from urgency words (ASAP=High, soon=Medium, etc.)
+- Extract dates if mentioned, otherwise null
+- Return empty array if no tasks found
+- Confidence based on clarity of tasks`;
 
     try {
-      const response = await this.askAI(messages, { model: this.models.logic, response_format: { type: "json_object" } });
-      const tasks = JSON.parse(response);
-      const confidence = Array.isArray(tasks) && tasks.length > 0 ? 0.75 : 0.55;
-      return { tasks, confidence };
-    } catch (e) {
-      return { tasks: [], confidence: 0.25 };
+      const response = await this.askAI(
+        [
+          { role: 'system', content: 'You are a task extraction assistant. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        {
+          model: this.models.logic,
+          max_tokens: 800,
+          temperature: 0.3,
+          response_format: { type: 'json_object' }
+        }
+      );
+
+      const parsed = JSON.parse(response);
+      
+      // Validate structure
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+        return { tasks: [], confidence: 0 };
+      }
+
+      // Ensure confidence is present
+      const confidence = parsed.confidence || 0.7;
+
+      console.log(`✅ HuggingFace extracted ${parsed.tasks.length} tasks (confidence: ${confidence})`);
+      
+      return {
+        tasks: parsed.tasks,
+        confidence: confidence
+      };
+    } catch (error) {
+      console.error('HuggingFace extractActionItems error:', error.message);
+      return { tasks: [], confidence: 0 };
     }
   }
 }

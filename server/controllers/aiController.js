@@ -48,7 +48,7 @@ class AIController {
           summaryConfidence: analysis.summary.confidence,
           replies: analysis.replies,
           actionItems: analysis.actionItems,
-          todoConfidence: 0.8, // Can be calculated from actionItems
+          todoConfidence: analysis.todoConfidence || 0.8,
           intent: analysis.intent,
           cached: analysis.accessCount > 1
         });

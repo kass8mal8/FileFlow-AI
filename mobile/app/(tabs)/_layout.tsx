@@ -5,6 +5,10 @@ import { Platform } from 'react-native';
 import { useTheme } from '@/components/ThemeContext';
 
 import { AIOrb } from '@/components/AIOrb';
+import { AIActionSheet } from '@/components/AIActionSheet';
+import { useState } from 'react';
+import { triggerHaptic } from '@/utils/haptics';
+import { router } from 'expo-router';
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -15,6 +19,25 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const { colors, theme } = useTheme();
+  const [aiMenuVisible, setAiMenuVisible] = useState(false);
+
+  const handleAIAction = (actionId: string) => {
+    triggerHaptic('medium');
+    switch (actionId) {
+      case 'chat':
+        // Potentially navigate to a dedicated chat screen or open global bubble
+        console.log('Global Chat requested');
+        break;
+      case 'summarize':
+        router.push('/reports');
+        break;
+      case 'scan':
+        router.push('/');
+        break;
+      default:
+        break;
+    }
+  };
 
   return (
     <>
@@ -76,10 +99,14 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
-    <AIOrb onPress={() => {
-      // TODO: Open AI Actions Menu (Chat, Scan, etc.)
-      console.log('AI Orb Pressed');
-    }} />
+
+    <AIOrb onPress={() => setAiMenuVisible(true)} />
+
+    <AIActionSheet 
+      visible={aiMenuVisible} 
+      onClose={() => setAiMenuVisible(false)}
+      onAction={handleAIAction}
+    />
     </>
   );
 }

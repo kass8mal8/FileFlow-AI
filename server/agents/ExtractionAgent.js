@@ -14,9 +14,13 @@ class ExtractionAgent extends BaseAgent {
     let prompt = "";
     
     if (context.intent === 'INVOICE') {
-        prompt = `Extract invoice details from this text. Return JSON: { amount: number, currency: string, due_date: string, paybill: string, account: string }. Text: ${input.substring(0, 3000)}`;
+        prompt = `Extract invoice details from this text. Return JSON: { amount: number, currency: string, due_date: string, vendor: string, invoice_link: string }. Text: ${input.substring(0, 3000)}`;
     } else if (context.intent === 'MEETING') {
-        prompt = `Extract meeting details. Return JSON: { date: string, time: string, platform: string, link: string }. Text: ${input.substring(0, 3000)}`;
+        prompt = `Extract meeting details. Return JSON: { title: string, date: string, time: string, platform: string, meeting_link: string, participants: string, agenda: string }. Text: ${input.substring(0, 3000)}`;
+    } else if (context.intent === 'CONTRACT') {
+        prompt = `Extract contract details. Return JSON: { document_type: string, parties: string, effective_date: string, expiration_date: string, key_terms: string[] }. Text: ${input.substring(0, 3000)}`;
+    } else if (context.intent === 'INFO') {
+        prompt = `Extract key information points. Return JSON: { title: string, key_points: string[], category: string, reading_time_minutes: number }. Text: ${input.substring(0, 3000)}`;
     } else {
         return {}; 
     }
