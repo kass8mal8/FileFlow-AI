@@ -22,7 +22,7 @@ class SummaryAgent extends BaseAgent {
     }
 
     // Step 2: Fallback to Gemini
-    this.log(`Falling back to Gemini for summary.`);
+    this.log(`Falling back to Gemini for summary. Tier: ${context.tier || 'free'}`);
     return await geminiService.generateSummary(input);
   }
 }

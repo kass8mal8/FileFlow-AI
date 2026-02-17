@@ -1,5 +1,6 @@
 import { appStorage } from '../utils/storage';
 import { SubscriptionTier, SubscriptionState, UsageQuota, ProFeatures, FREE_TIER_LIMITS, PRO_FEATURES, FREE_FEATURES } from '../types/subscription';
+import { API_BASE_URL } from '../utils/constants';
 
 class SubscriptionService {
   private currentState: SubscriptionState | null = null;
@@ -12,6 +13,17 @@ class SubscriptionService {
     this.currentState = await appStorage.getSubscriptionState();
     this.todayQuota = await appStorage.getUsageQuota();
     
+    // Auto-sync with server if possible
+    try {
+        const userInfo = await appStorage.getUserInfo();
+        if (userInfo?.email) {
+            // Run in background so we don't block initialization
+            this.syncWithServer(userInfo.email).catch(console.error);
+        }
+    } catch (e) {
+        console.log("Failed to auto-sync subscription", e);
+    }
+
     // Default to free tier if no state exists
     if (!this.currentState) {
       this.currentState = { tier: SubscriptionTier.FREE };
@@ -107,6 +119,15 @@ class SubscriptionService {
   }
 
   /**
+   * Check if document length is allowed for Free tier
+   */
+  isLengthAllowed(text: string): boolean {
+    if (this.isPro()) return true;
+    const wordCount = text.trim().split(/\s+/).length;
+    return wordCount <= FREE_TIER_LIMITS.maxWordsPerSummary;
+  }
+
+  /**
    * Increment usage counter
    */
   async incrementUsage(action: 'summary' | 'reply' | 'search'): Promise<void> {
@@ -191,6 +212,49 @@ class SubscriptionService {
       lastReset: new Date().toISOString()
     };
     await appStorage.setUsageQuota(this.todayQuota);
+  }
+
+  /**
+   * Sync subscription status with server
+   */
+  async syncWithServer(email: string): Promise<void> {
+    try {
+      console.log(`Syncing subscription for ${email}...`);
+      const url = `${API_BASE_URL}/user/status?email=${encodeURIComponent(email)}`;
+      console.log("Fetching URL:", url);
+      
+      const response = await fetch(url, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Server Subscription Data:", data);
+        
+        if (data.tier) {
+            // Map server status to local state
+            const newTier = data.tier === 'PRO' ? SubscriptionTier.PRO : 
+                           data.tier === 'TRIAL' ? SubscriptionTier.TRIAL : 
+                           SubscriptionTier.FREE;
+                           
+            await this.updateTier(newTier);
+            
+            // If server has expiration/trial data, update that too (simplified for now)
+            if (data.trialEndsAt) {
+                this.currentState = {
+                    ...this.currentState!,
+                    tier: newTier,
+                    trialEndsAt: data.trialEndsAt
+                };
+                await appStorage.setSubscriptionState(this.currentState);
+            }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to sync subscription:", error);
+    }
   }
 
   /**

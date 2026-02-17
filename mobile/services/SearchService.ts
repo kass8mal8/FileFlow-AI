@@ -1,6 +1,6 @@
-import axios from 'axios';
+import { API_BASE_URL } from '../utils/constants';
 
-const API_BASE_URL = 'http://localhost:3000/api/ai';
+const SEARCH_API_URL = `${API_BASE_URL}/ai`;
 
 interface SearchResult {
   id: string;
@@ -22,7 +22,7 @@ class SearchService {
    */
   async search(query: string): Promise<SearchResponse> {
     try {
-      const response = await axios.post(`${API_BASE_URL}/search`, {
+      const response = await axios.post(`${SEARCH_API_URL}/search`, {
         query
       });
       return response.data;

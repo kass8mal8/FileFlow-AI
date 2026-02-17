@@ -33,14 +33,14 @@ class AIController {
    */
   async analyzeEmail(req, res) {
     try {
-      const { text, emailId, userId, userName } = req.body;
+      const { text, emailId, userId, userName, tier, from } = req.body;
       
       if (!text || !emailId || !userId) {
         return res.status(400).json({ error: 'text, emailId, and userId are required' });
       }
 
       // Get or create comprehensive analysis
-      const analysis = await aiService.getOrCreateAnalysis(emailId, userId, text, userName || 'User');
+      const analysis = await aiService.getOrCreateAnalysis(emailId, userId, text, userName || 'User', tier || 'free', from);
       
       if (analysis) {
         return res.json({
@@ -227,6 +227,22 @@ class AIController {
     } catch (error) {
        console.error('Intent detection error:', error);
        res.status(500).json({ error: 'Intent detection failed' });
+    }
+  }
+
+  /**
+   * Generate holistic user recap
+   */
+  async getRecap(req, res) {
+    try {
+      const { userId, items } = req.body;
+      if (!userId) return res.status(400).json({ error: 'userId is required' });
+      
+      const recap = await aiService.generateUserRecap(userId, items || []);
+      res.json({ recap });
+    } catch (error) {
+      console.error('Recap Controller Error:', error);
+      res.status(500).json({ error: 'Failed to generate recap' });
     }
   }
 }

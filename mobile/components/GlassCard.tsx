@@ -18,28 +18,50 @@ export const GlassCard: React.FC<GlassCardProps> = ({
 }) => {
   const { colors, isDark } = useTheme();
 
-  // Glass effect settings
+  // Glass effect settings for the default variant
   const tint = isDark ? 'dark' : 'light';
-  const borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.4)';
-  const backgroundColor = isDark ? 'rgba(30, 30, 40, 0.4)' : 'rgba(255, 255, 255, 0.4)';
+  const borderColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.4)';
+  const backgroundColor = isDark ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.4)';
+
+  // Use heavy blur only for hero/overlay elements.
+  if (variant === 'default') {
+    return (
+      <View style={[styles.container, style]}>
+        <BlurView 
+          intensity={intensity} 
+          tint={tint} 
+          style={[
+            styles.blurView, 
+            { 
+              backgroundColor, 
+              borderColor,
+            } 
+          ]}
+        >
+          <View style={styles.content}>
+            {children}
+          </View>
+        </BlurView>
+      </View>
+    );
+  }
+
+  // Elevated / outline variants: solid surface with subtle border, no blur (better for lists).
+  const cardStyle = [
+    styles.container,
+    {
+      backgroundColor: colors.surface,
+      borderWidth: variant === 'outline' ? 1 : 0,
+      borderColor: colors.border,
+    },
+    style,
+  ];
 
   return (
-    <View style={[styles.container, style]}>
-      <BlurView 
-        intensity={intensity} 
-        tint={tint} 
-        style={[
-          styles.blurView, 
-          { 
-            backgroundColor, 
-            borderColor,
-          } 
-        ]}
-      >
-        <View style={styles.content}>
-          {children}
-        </View>
-      </BlurView>
+    <View style={cardStyle}>
+      <View style={[styles.content, styles.solidContent]}>
+        {children}
+      </View>
     </View>
   );
 };
@@ -69,5 +91,9 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-  }
+  },
+  solidContent: {
+    // Slightly tighter padding for dense list rows
+    paddingVertical: 14,
+  },
 });

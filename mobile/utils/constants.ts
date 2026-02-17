@@ -5,6 +5,7 @@ export const GOOGLE_CLIENT_SECRET = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET
 // OAuth2 Scopes
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -15,12 +16,13 @@ export const GOOGLE_SCOPES = [
 export const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
-export const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1';
+// Use backend proxy for Gmail API to avoid CORS
+export const GMAIL_API_BASE = `${process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.100.18:3001/api'}/google`;
 export const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 export const UPLOAD_API_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
 // Backend API Base URL
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.100.18:3001/api';
 export const AI_CLASSIFICATION_ENDPOINT = `${API_BASE_URL}/classify`;
 
 // Background Task Configuration

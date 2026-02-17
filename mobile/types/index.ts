@@ -40,6 +40,7 @@ export interface ProcessedFile {
   emailFrom?: string;
   emailSubject?: string;
   threadId?: string;
+  attachmentId?: string;
   category: FileCategory;
   status: SyncStatus;
   uploadedAt: string;

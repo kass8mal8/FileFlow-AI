@@ -2,21 +2,42 @@ const User = require('../models/User');
 
 class UserService {
   /**
-   * Get user by email, create if doesn't exist
+   * Get user by email, create if doesn't exist.
+   * Optionally sync basic profile fields (name, googleId, picture).
    */
-  async getUserByEmail(email) {
+  async getUserByEmail(email, profile = {}) {
     try {
-      let user = await User.findOne({ email: email.toLowerCase() });
+      const normalizedEmail = email.toLowerCase();
+      let user = await User.findOne({ email: normalizedEmail });
       
       if (!user) {
         user = await User.create({ 
-          email: email.toLowerCase(),
+          email: normalizedEmail,
+          name: profile.name,
+          googleId: profile.googleId,
+          picture: profile.picture,
           subscription: {
             tier: 'FREE',
             status: 'active'
           }
         });
         console.log(`✨ Created new user: ${email}`);
+      } else if (profile && (profile.name || profile.googleId || profile.picture)) {
+        const updates = {};
+        if (profile.name && profile.name !== user.name) {
+          updates.name = profile.name;
+        }
+        if (profile.googleId && profile.googleId !== user.googleId) {
+          updates.googleId = profile.googleId;
+        }
+        if (profile.picture && profile.picture !== user.picture) {
+          updates.picture = profile.picture;
+        }
+        if (Object.keys(updates).length > 0) {
+          Object.assign(user, updates);
+          await user.save();
+          console.log(`✨ Synced user profile for: ${email}`);
+        }
       }
       
       return user;
@@ -45,8 +66,8 @@ class UserService {
 
       const user = await User.findOneAndUpdate(
         { email: email.toLowerCase() },
-        update,
-        { new: true }
+        { $set: update },
+        { new: true, upsert: true }
       );
 
       return user;

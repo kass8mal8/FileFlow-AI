@@ -3,6 +3,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const aiRoutes = require('./routes/aiRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const googleRoutes = require('./routes/googleRoutes');
 
 require('dotenv').config();
 
@@ -13,17 +14,14 @@ const app = express();
 const port = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:8081', 'https://unpalatial-alfreda-trackable.ngrok-free.dev', '*'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-app.use(express.json());
+app.use(cors()); // Allow all for development simplicity, or be more specific in production
+app.use(express.json({ limit: '50mb' })); // Increased limit for attachments
 
 // Routes
 app.use('/api', aiRoutes);
-app.use('/api/payments', paymentRoutes); // Register payment routes
+app.use('/api/payments', paymentRoutes);
+app.use('/api/google', googleRoutes);
+app.use('/api/user', require('./routes/userRoutes'));
 
 app.get('/', (req, res) => {
   res.send('FileFlow AI Server Running');

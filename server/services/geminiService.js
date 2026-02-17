@@ -32,12 +32,12 @@ class GeminiService {
    * Streaming Execution with 2026 Model Fallbacks
    */
   async *generateWithFallbackStream(prompt, config = {}) {
-    // Don't change these models (all 1. versions are unsupported)
-    const modelsToTry = [
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash-lite",
-    ];
+    const { tier, ...generationConfig } = config;
+    const isProTier = tier === "pro";
+    // Prefer higher-quality model for Pro tier, flash-first for others
+    const modelsToTry = isProTier
+      ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+      : ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
 
     let lastError = null;
 
@@ -48,7 +48,7 @@ class GeminiService {
           model: modelName,
           generationConfig: {
             temperature: 0.7,
-            ...config,
+            ...generationConfig,
           },
         });
 
@@ -82,12 +82,11 @@ class GeminiService {
    * Primary Execution with 2026 Model Fallbacks (Non-streamed)
    */
   async generateWithFallback(prompt, config = {}) {
-    // Don't change these models (all 1. versions are unsupported)
-    const modelsToTry = [
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash-lite",
-    ];
+    const { tier, ...generationConfig } = config;
+    const isProTier = tier === "pro";
+    const modelsToTry = isProTier
+      ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+      : ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
 
     let lastError = null;
 
@@ -98,7 +97,7 @@ class GeminiService {
           model: modelName,
           generationConfig: {
             temperature: 0.7,
-            ...config,
+            ...generationConfig,
           },
         });
 
@@ -158,9 +157,9 @@ class GeminiService {
     const prompt = `
       Analyze this email: ${text}
       Recipient's name: ${userName}
-      Task: Suggest 2 short, professional replies. 
+      Task: Suggest exactly ${count} short, professional reply alternatives. 
       Constraint: 
-      1. Maximum 2 formatted replies.
+      1. Exactly ${count} replies.
       2. Each reply must be very concise (max 2 sentences).
       3. Return as valid JSON array of strings.
     `;
@@ -169,7 +168,7 @@ class GeminiService {
       const raw = await this.generateWithFallback(prompt, {
         responseMimeType: "application/json",
       });
-      return JSON.parse(raw);
+      return JSON.parse(this._cleanJson(raw));
     } catch (e) {
       console.warn("JSON Parse failed, using regex cleanup.");
       return [
@@ -197,7 +196,7 @@ class GeminiService {
   async generateSummary(text, customPrompt) {
     const prompt =
       customPrompt ||
-      "Summarize this email in a professional, concise tone (max 2 sentences). Focus on the core intent, requested actions, and any mentioned deadlines.";
+      "Summarize this email in a professional, concise tone. YOU MUST NOT EXCEED 2 SENTENCES. Focus on the core intent and requested actions.";
     const combinedPrompt = `${prompt}\n\nEmail Content:\n${text}`;
     const summary = await this.generateWithFallback(combinedPrompt);
     
@@ -210,9 +209,10 @@ class GeminiService {
   /**
    * Action Item Extraction (To-Do List)
    */
-  async extractActionItems(text, userName = "the user") {
+  async extractActionItems(text, userName = "the user", limit = 3) {
     const prompt = `
       Analyze the following email for ${userName} and extract a "To-Do" list of action items. 
+      Limit: Extract strictly no more than ${limit} items.
 
       Rules for extraction:
       1. Only include items that require a specific action from the recipient (${userName}).
@@ -238,7 +238,7 @@ class GeminiService {
       const raw = await this.generateWithFallback(prompt, {
         responseMimeType: "application/json",
       });
-      const tasks = JSON.parse(raw);
+      const tasks = JSON.parse(this._cleanJson(raw));
       const confidence = Array.isArray(tasks) && tasks.length > 0 ? 0.80 : 0.60;
       return { tasks, confidence };
     } catch (e) {
@@ -298,11 +298,19 @@ class GeminiService {
       const raw = await this.generateWithFallback(prompt, {
         responseMimeType: "application/json",
       });
-      return JSON.parse(raw);
+      return JSON.parse(this._cleanJson(raw));
     } catch (e) {
       console.warn("Intent detection failed, fallback to INFO", e);
       return { intent: "INFO", confidence: 0, details: {} };
     }
+  }
+
+  _cleanJson(str) {
+    if (typeof str !== "string") return str;
+    return str
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
   }
 }
 

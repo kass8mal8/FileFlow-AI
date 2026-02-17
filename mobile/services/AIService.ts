@@ -1,4 +1,4 @@
-import axios from 'axios';
+import api from './api';
 import { API_BASE_URL } from '../utils/constants';
 
 class AIService {
@@ -9,7 +9,10 @@ class AIService {
     try {
       const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ text, stream: true, userName })
       });
 
@@ -43,7 +46,7 @@ class AIService {
     }
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/summary`, {
+      const response = await api.post(`${API_BASE_URL}/summary`, {
         text: emailBody.substring(0, 5000)
       });
       return response.data?.summary || "";
@@ -58,7 +61,7 @@ class AIService {
   async generateReplies(emailBody: string, userName?: string): Promise<string[]> {
     const fallback = ["Thanks for reaching out!", "Acknowledged, I'm on it.", "Will review and reply by EOD."];
     try {
-      const response = await axios.post(`${API_BASE_URL}/replies`, {
+      const response = await api.post(`${API_BASE_URL}/replies`, {
         text: emailBody,
         userName,
         count: 3
@@ -81,7 +84,7 @@ class AIService {
     const fallback = [];
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/todo`, {
+      const response = await api.post(`${API_BASE_URL}/todo`, {
         text: emailBody,
         userName
       });
@@ -100,6 +103,25 @@ class AIService {
     } catch (error) {
       console.error('Extract todo error:', error);
       return fallback;
+    }
+  }
+  /**
+   * Comprehensive Email Analysis with Persistence
+   */
+  async analyzeEmail(data: { 
+    text: string; 
+    emailId: string; 
+    userId: string; 
+    userName?: string; 
+    tier?: 'free' | 'pro'; 
+    from?: string; 
+  }): Promise<any> {
+    try {
+      const response = await api.post(`${API_BASE_URL}/analyze`, data);
+      return response.data;
+    } catch (error) {
+      console.error('Analysis error:', error);
+      return null;
     }
   }
 }

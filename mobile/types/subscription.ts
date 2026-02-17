@@ -22,39 +22,50 @@ export interface UsageQuota {
 
 export interface ProFeatures {
   unlimitedAI: boolean;
-  premiumModels: boolean; // GPT-4o, Gemini Pro
-  semanticSearch: boolean;
-  crossSenderLinking: boolean;
-  driveIntegration: boolean;
-  priorityNotifications: boolean;
-  autoDraft: boolean;
+  premiumModels: boolean; // Qwen 2.5 / Mistral Nemo
+  chatWithFiles: boolean; // RAG
+  mpesaAutoPay: boolean;
+  longDocAnalysis: boolean; // > 1000 words
+  deepLinkage: boolean;
+  autonomousReplies: boolean;
+  batchActions: boolean;
+  whatsappPrioritySupport: boolean;
+  kraTaxPrep: boolean;
 }
 
 // Free tier limits
 export const FREE_TIER_LIMITS = {
-  aiSummariesPerDay: 10,
-  smartRepliesPerEmail: 3,
+  aiSummariesPerDay: 5,
+  smartRepliesPerEmail: 1,
+  actionItemsPerEmail: 1,
   searchesPerDay: 5,
-  emailHistoryDays: 30
+  emailHistoryDays: 30,
+  maxWordsPerSummary: 1000,
 };
 
 // Pro tier features
 export const PRO_FEATURES: ProFeatures = {
   unlimitedAI: true,
   premiumModels: true,
-  semanticSearch: true,
-  crossSenderLinking: true,
-  driveIntegration: true,
-  priorityNotifications: true,
-  autoDraft: true
+  chatWithFiles: true,
+  mpesaAutoPay: true,
+  longDocAnalysis: true,
+  deepLinkage: true,
+  autonomousReplies: true,
+  batchActions: true,
+  whatsappPrioritySupport: true,
+  kraTaxPrep: true,
 };
 
 export const FREE_FEATURES: ProFeatures = {
   unlimitedAI: false,
   premiumModels: false,
-  semanticSearch: false,
-  crossSenderLinking: false,
-  driveIntegration: false,
-  priorityNotifications: false,
-  autoDraft: false
+  chatWithFiles: false,
+  mpesaAutoPay: false,
+  longDocAnalysis: false,
+  deepLinkage: false,
+  autonomousReplies: false,
+  batchActions: false,
+  whatsappPrioritySupport: false,
+  kraTaxPrep: false,
 };

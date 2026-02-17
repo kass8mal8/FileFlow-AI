@@ -39,11 +39,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Archive,
-  Lock,
-  Crown,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInDown, FadeInRight, FadeInUp } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeInRight } from "react-native-reanimated";
 import gmailService from "../../services/gmail";
 import aiService from "../../services/AIService";
 import linkageService from "../../services/LinkageService";
@@ -101,12 +99,82 @@ export default function EmailDetailScreen() {
   } | null>(null);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [userInfo, setUserInfo] = useState<any>(null);
-  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   // existing state...
   const [showPaywall, setShowPaywall] = useState(false);
 
-// Chat functionality removed
+  // Chat Handler
+  const handleSendChat = async () => {
+    if (!chatInput.trim()) return;
+
+    const userMsg = chatInput;
+    setChatInput("");
+    setChatMessages((prev) => [
+      ...prev,
+      { id: Date.now().toString(), text: userMsg, sender: "user" },
+    ]);
+    setChatLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("query", userMsg);
+
+      if (type === "email") {
+        const fullContext = `Subject: ${(item as UnreadEmail).subject}\nFrom: ${
+          (item as UnreadEmail).from
+        }\nDate: ${(item as UnreadEmail).date}\n\n${body}`;
+        formData.append("context", fullContext);
+      } else {
+        const fileItem = item as ProcessedFile;
+        // If we have a local URI, upload it. If not, maybe use text extracted previously?
+        // MVP: Try to use localUri if available
+        if (fileItem.localUri) {
+          formData.append("file", {
+            uri: fileItem.localUri,
+            type: fileItem.mimeType || "application/pdf",
+            name: fileItem.filename,
+          } as any);
+        } else {
+          // Fallback: If no local file, just send metadata for now or error
+          // Ideally backend should fetch by ID, but we implemented context/file
+          formData.append(
+            "context",
+            `File: ${fileItem.filename}\nCategory: ${fileItem.category}\n(Note: Full file content analysis requires local availability)`
+          );
+        }
+      }
+
+      const response = await fetch(
+        "https://unpalatial-alfreda-trackable.ngrok-free.dev/api/chat",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+      if (data.answer) {
+        setChatMessages((prev) => [
+          ...prev,
+          { id: Date.now().toString(), text: data.answer, sender: "ai" },
+        ]);
+      } else {
+        throw new Error("No answer returned");
+      }
+    } catch (err) {
+      console.error("Chat failed", err);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          text: "I'm having trouble connecting. Please try again.",
+          sender: "ai",
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
 
   // ... rest of existing code
   const [paywallFeature, setPaywallFeature] = useState<string>("");
@@ -122,7 +190,6 @@ export default function EmailDetailScreen() {
 
   useEffect(() => {
     subscriptionService.initialize();
-    appStorage.getUserInfo().then(setUserInfo);
     loadContent();
   }, [id, type]);
 
@@ -141,8 +208,6 @@ export default function EmailDetailScreen() {
         const unread = await gmailService.fetchRecentUnreadEmails();
         content = unread.find((e) => e.id === id) || null;
       }
-      
-      const finalId = content?.id || id;
 
       if (!content) {
         Alert.alert("Error", "Content not found.");
@@ -156,7 +221,7 @@ export default function EmailDetailScreen() {
       // Lazy Loading: If file is Pending, process it now
       if (type === 'file' && (content as ProcessedFile).status === SyncStatus.Pending) {
         try {
-          setProcessingStatus("FileFlow is analyzing your document...");
+          setProcessingStatus("Classifying document...");
           const fileItem = content as ProcessedFile;
           
           // 1. Classify
@@ -167,7 +232,7 @@ export default function EmailDetailScreen() {
             emailFrom: fileItem.emailFrom || '',
           });
 
-          setProcessingStatus("Protecting your document privacy...");
+          setProcessingStatus("Syncing to Drive...");
           // 2. Download
           const attachmentData = await gmailService.downloadAttachment(
             fileItem.messageId,
@@ -243,72 +308,130 @@ export default function EmailDetailScreen() {
         await subscriptionService.incrementUsage("reply");
       };
 
-      // 5. Independent Parallel Execution for Perceived Speed
-      // 5. Unified AI Analysis with Persistence
-      const performAnalysis = async () => {
+      // NEW: Comprehensive Analysis (uses EmailAnalysis for instant retrieval)
+      const fetchAllAnalysis = async () => {
         try {
-          // Linkage can run in parallel
-          const linkagePromise = (async () => {
-              const fromEmail = type === "file" ? (content as ProcessedFile)?.emailFrom : (content as UnreadEmail)?.from;
-              if (fromEmail) {
-                const related = await linkageService.getRelatedKnowledge(fromEmail, finalId);
-                setRelatedData(related);
-              }
-          })();
+          const quota = await subscriptionService.canUseAI("summary"); // Check quota for summary as it's the primary AI feature
 
-          // Check quotas for fresh generation (gatekeeper)
-          // We only block if we know for sure we don't have it cached?
-          // The backend currently handles getOrCreate. 
-          // If we want to be strict, we check "summary" allowed.
-          const summaryQuota = await subscriptionService.canUseAI("summary");
-          
-          // If not allowed and no cache, backend might still return if logic allows, 
-          // but let's assume we proceed and let backend/subscription logic handle it later or here.
-          // For now, we proceed to `analyzeEmail` which handles "get or create".
-          
-          const tier = subscriptionService.isPro() ? 'pro' : 'free';
-          const fromEmail = type === "file" ? (content as ProcessedFile)?.emailFrom : (content as UnreadEmail)?.from;
-
-          const analysis = await aiService.analyzeEmail({
-            text: fullBody || "",
-            emailId: finalId, // Use finalId derived earlier
-            userId: cachedUserInfo?.email || "",
-            userName: userName,
-            tier: tier,
-            from: fromEmail
-          });
-
-          if (analysis) {
-            if (analysis.summary) setSummary(analysis.summary);
-            if (analysis.summaryConfidence) setSummaryConfidence(analysis.summaryConfidence);
-            
-            if (analysis.replies && Array.isArray(analysis.replies)) setReplies(analysis.replies);
-            
-            if (analysis.actionItems) setTodoList(analysis.actionItems);
-            if (analysis.todoConfidence) setTodoConfidence(analysis.todoConfidence);
-            
-            if (analysis.intent) setDetectedIntent(analysis.intent);
-
-            // Increment usage only if it was a FRESH generation (not cached)
-            if (!analysis.cached && !analysis.error) {
-                 await subscriptionService.incrementUsage("summary");
-                 if (analysis.replies?.length) await subscriptionService.incrementUsage("reply");
-            }
-          } else {
-             setSummary("Could not generate analysis. Please try again.");
+          // Length Trigger: Check if document is too long for Free tier
+          const totalText = fullBody || "";
+          if (!subscriptionService.isLengthAllowed(totalText)) {
+            setPaywallFeature("Deep Analysis for Long Documents");
+            setShowPaywall(true);
+            setSummary(
+              "This is a complex or long document. Unlock Pro to get a deep-dive 5-point analysis and full summary."
+            );
+            setAiLoading(false);
+            return;
           }
 
-          await linkagePromise;
+          if (!quota.allowed) {
+            setPaywallFeature("AI Summaries");
+            setShowPaywall(true);
+            setSummary(
+              `You've reached your daily limit of ${quota.limit} AI summaries. Upgrade to Pro for unlimited access.`
+            );
+            setAiLoading(false);
+            return;
+          }
 
+          const response = await fetch(`${API_BASE_URL}/analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: fullBody || "",
+              emailId: id,
+              userId: userInfo?.email,
+              userName,
+            }),
+          });
+          const data = await response.json();
+
+          // Update all states from single response
+          setSummary(data.summary || "");
+          setSummaryConfidence(data.summaryConfidence || 0);
+          setReplies(data.replies || []);
+          setTodoList(data.actionItems || []);
+          setTodoConfidence(data.todoConfidence || 0);
+          setDetectedIntent(data.intent || null);
+
+          console.log(
+            data.cached
+              ? "📦 Loaded from database"
+              : "🤖 Generated new analysis"
+          );
+          console.log("📊 Confidence Scores:", {
+            summary: data.summaryConfidence,
+            todo: data.todoConfidence,
+          });
+          await subscriptionService.incrementUsage("summary"); // Increment usage after successful analysis
         } catch (error) {
-          console.error("AI Analysis Error:", error);
-          setSummary("An error occurred during analysis.");
+          console.error("Comprehensive analysis error:", error);
+          // Fallback to individual calls if /analyze fails (though this should ideally be handled by the backend)
+          // For now, we'll just log the error and let the UI show empty states or previous data.
         } finally {
           setAiLoading(false);
         }
       };
 
-      performAnalysis();
+      // Linkage Fetching
+      const fetchLinkage = async () => {
+        const fromEmail =
+          type === "file"
+            ? (content as ProcessedFile).emailFrom
+            : (content as UnreadEmail).from;
+
+        if (fromEmail) {
+          const data = await linkageService.getRelatedKnowledge(
+            fromEmail,
+            content?.id
+          );
+          setRelatedData(data);
+        }
+      };
+
+      // Execute all fetches in parallel
+      await Promise.all([
+        fetchAllAnalysis(), // Single comprehensive call
+        fetchLinkage(),
+      ]);
+
+      // Intent Detection
+      const fetchIntent = async () => {
+        try {
+          // We can assume we have body here
+          const res = await fetch(
+            "https://unpalatial-alfreda-trackable.ngrok-free.dev/api/intent",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: (fullBody || "").substring(0, 3000), // Limit payload
+                filename:
+                  type === "file"
+                    ? (content as ProcessedFile).filename
+                    : (content as UnreadEmail).subject,
+                subject:
+                  type === "file"
+                    ? (content as ProcessedFile).emailSubject
+                    : (content as UnreadEmail).subject,
+                from:
+                  type === "file"
+                    ? (content as ProcessedFile).emailFrom
+                    : (content as UnreadEmail).from,
+                resourceId: id, // Send ID for caching
+              }),
+            }
+          );
+          const data = await res.json();
+          if (data.intent) {
+            setDetectedIntent(data);
+          }
+        } catch (e) {
+          console.log("Intent fetch failed", e);
+        }
+      };
+      fetchIntent();
     } catch (error) {
       console.error("Error loading email detail:", error);
     } finally {
@@ -510,8 +633,8 @@ export default function EmailDetailScreen() {
           numberOfLines={1}
         >
           {type === "file"
-            ? (item as ProcessedFile)?.filename || "File Detail"
-            : (item as UnreadEmail)?.subject || "Email Detail"}
+            ? (item as ProcessedFile).filename
+            : (item as UnreadEmail).subject}
         </Text>
         <View style={{ width: 44 }} />
       </View>
@@ -524,18 +647,37 @@ export default function EmailDetailScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Smart Header moved to bottom for Thumb Zone */}
+          {/* Smart Header (Intent) */}
+          {detectedIntent && (
+            <Animated.View entering={FadeInDown.delay(50)}>
+              <SmartHeader
+                intent={detectedIntent.type}
+                data={detectedIntent.details}
+                confidence={detectedIntent.confidence}
+                onPaywallTrigger={(feature) => {
+                  setPaywallFeature(feature);
+                  setShowPaywall(true);
+                }}
+              />
+            </Animated.View>
+          )}
 
           {/* Attachment Card if applicable */}
           {type === "file" &&
-            (item as ProcessedFile)?.status === SyncStatus.Success && (
+            (item as ProcessedFile).status === SyncStatus.Success && (
               <Animated.View
                 entering={FadeInDown.delay(100)}
                 style={styles.attachmentCard}
               >
                 <LinearGradient
-                  colors={[colors.primary, colors.primaryLight]}
-                  style={[styles.attachmentGradient, { backgroundColor: colors.surface }]}
+                  colors={
+                    theme === "dark"
+                      ? ["#1e293b", "#0f172a"]
+                      : ["#f5f3ff", "#ede9fe"]
+                  }
+                  style={styles.attachmentGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
                   <View
                     style={[
@@ -557,7 +699,7 @@ export default function EmailDetailScreen() {
                     <Text
                       style={[styles.attachmentName, { color: colors.text }]}
                     >
-                      {(item as ProcessedFile)?.filename || ""}
+                      {(item as ProcessedFile).filename}
                     </Text>
                     <Text
                       style={[
@@ -568,8 +710,8 @@ export default function EmailDetailScreen() {
                         },
                       ]}
                     >
-                      {(item as ProcessedFile)?.category || "Document"} •{" "}
-                      {(((item as ProcessedFile)?.size || 0) / 1024).toFixed(1)} KB
+                      {(item as ProcessedFile).category} •{" "}
+                      {((item as ProcessedFile).size / 1024).toFixed(1)} KB
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -583,7 +725,7 @@ export default function EmailDetailScreen() {
                       },
                     ]}
                     onPress={() => {
-                      const url = (item as ProcessedFile)?.driveUrl;
+                      const url = (item as ProcessedFile).driveUrl;
                       if (url) Linking.openURL(url);
                     }}
                   >
@@ -610,8 +752,18 @@ export default function EmailDetailScreen() {
             style={styles.summarySection}
           >
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                FileFlow Insights
+              <View
+                style={[
+                  styles.sparkleContainer,
+                  { backgroundColor: colors.primary + "20" },
+                ]}
+              >
+                <Sparkles size={16} color={colors.primary} />
+              </View>
+              <Text
+                style={[styles.sectionTitle, { color: colors.textSecondary }]}
+              >
+                AI Insights
               </Text>
               {summaryConfidence > 0 && (
                 <View
@@ -694,37 +846,21 @@ export default function EmailDetailScreen() {
                 <Skeleton height={20} width="60%" variant="rounded" />
               </View>
             ) : (
-              <TouchableOpacity
-                onPress={() => setSummaryExpanded(!summaryExpanded)}
-                activeOpacity={0.8}
+              <BlurView
+                intensity={80}
+                tint={theme === "dark" ? "dark" : "light"}
+                style={[
+                  styles.summaryCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                <View
-                  style={[
-                    styles.summaryCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.summaryText, { color: colors.text }]}>
-                    {summaryExpanded 
-                      ? summary 
-                      : (summary.split('. ')[0] + (summary.split('. ').length > 1 ? '...' : ''))}
-                  </Text>
-                  {summary.split('. ').length > 1 && (
-                    <Text style={{ 
-                      color: colors.primary, 
-                      fontSize: 12, 
-                      fontWeight: '600', 
-                      marginTop: 8,
-                      alignSelf: 'flex-end'
-                    }}>
-                      {summaryExpanded ? 'Tap to Collapse' : 'Tap to Expand BLUF'}
-                    </Text>
-                  )}
-                </View>
-              </TouchableOpacity>
+                <Text style={[styles.summaryText, { color: colors.text }]}>
+                  {summary}
+                </Text>
+              </BlurView>
             )}
           </Animated.View>
 
@@ -734,8 +870,16 @@ export default function EmailDetailScreen() {
             style={styles.todoSection}
           >
             <View style={styles.sectionHeader}>
+              <View
+                style={[
+                  styles.todoIconContainer,
+                  { backgroundColor: colors.primary + "20" },
+                ]}
+              >
+                <CheckSquare size={16} color={colors.primary} />
+              </View>
               <Text
-                style={[styles.sectionTitle, { color: colors.text }]}
+                style={[styles.sectionTitle, { color: colors.textSecondary }]}
               >
                 Action Items
               </Text>
@@ -832,10 +976,7 @@ export default function EmailDetailScreen() {
                 ]}
               >
                 <View style={styles.todoContent}>
-                  {(subscriptionService.isPro() 
-                    ? (showAllTodos ? todoList : todoList.slice(0, 3)) 
-                    : todoList.slice(0, 1)
-                  ).map(
+                  {(showAllTodos ? todoList : todoList.slice(0, 3)).map(
                     (task, i) => {
                       const priorityColor =
                         task.priority === "High"
@@ -855,6 +996,7 @@ export default function EmailDetailScreen() {
                             }
                           ]}
                         >
+                          <View style={[styles.taskPriorityBar, { backgroundColor: priorityColor }]} />
                           <View style={styles.taskContent}>
                             <View style={styles.taskHeader}>
                               <View
@@ -909,7 +1051,7 @@ export default function EmailDetailScreen() {
                     }
                   )}
 
-                  {todoList.length > 3 && subscriptionService.isPro() && (
+                  {todoList.length > 3 && (
                     <TouchableOpacity
                       onPress={() => setShowAllTodos(!showAllTodos)}
                       style={[
@@ -938,27 +1080,6 @@ export default function EmailDetailScreen() {
                       />
                     </TouchableOpacity>
                   )}
-                  {/* Upgrade prompt for more todos */}
-                  {todoList.length > 1 && !subscriptionService.isPro() && (
-                    <TouchableOpacity
-                      onPress={() => {
-                         setPaywallFeature("Unlimited Action Items");
-                         setShowPaywall(true);
-                      }}
-                       style={[
-                        styles.viewMoreBtn,
-                        {
-                          backgroundColor: colors.primary + "10",
-                          borderColor: colors.primary + "30",
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.viewMoreText, { color: colors.primary }]}>
-                         Unlock {todoList.length - 1} more items
-                      </Text>
-                      <Crown size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                  )}
                 </View>
               </View>
             )}
@@ -972,7 +1093,7 @@ export default function EmailDetailScreen() {
             >
               <Text
                 style={[
-                  styles.sectionTitle, 
+                  styles.sectionTitle,
                   { color: colors.textSecondary, marginBottom: 12 },
                 ]}
               >
@@ -1011,101 +1132,89 @@ export default function EmailDetailScreen() {
               )}
 
               <View style={styles.repliesContainer}>
-                {(subscriptionService.isPro() ? replies : replies.slice(0, 1)).map((reply, index) => (
-                  <TouchableOpacity
+                {replies.map((reply, index) => (
+                  <View
                     key={index}
-                    activeOpacity={0.8}
                     style={[
                       styles.replyCard,
                       {
                         backgroundColor: colors.surface,
                         borderColor: colors.border,
-                        borderWidth: 1,
-                        borderRadius: 16,
-                        padding: 16,
-                        marginBottom: 8,
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.05,
-                        shadowRadius: 4,
-                        elevation: 2
                       },
                     ]}
                   >
-                    <Text style={[styles.replyBody, { color: colors.text, fontSize: 14, lineHeight: 20 }]}>
+                    <Text style={[styles.replyBody, { color: colors.text }]}>
                       {reply}
                     </Text>
 
-                      <View style={{ flexDirection: 'row', marginTop: 12, gap: 12 }}>
-                        <TouchableOpacity
-                          onPress={() => handleSmartReply(reply, "draft")}
-                          disabled={!!drafting}
-                          activeOpacity={0.7}
-                          style={{ flex: 1 }}
+                    <View style={styles.replyActions}>
+                      <TouchableOpacity
+                        onPress={() => handleSmartReply(reply, "draft")}
+                        disabled={!!drafting}
+                        activeOpacity={0.7}
+                        style={{ flex: 1 }}
+                      >
+                        <BlurView
+                          intensity={20}
+                          tint={theme === "dark" ? "dark" : "light"}
+                          style={[
+                            styles.actionBtnBlur,
+                            {
+                              borderColor: theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
+                              borderWidth: 1.5
+                            }
+                          ]}
                         >
-                          <LinearGradient
-                            colors={theme === 'dark' ? [colors.surface, colors.surface] : ['#f0f0f0', '#e5e5e5']}
+                          <FileText size={16} color={colors.text} />
+                          <Text
                             style={[
-                              styles.actionBtnBlur,
-                              {
-                                borderColor: colors.border,
-                                borderWidth: 1,
-                                borderRadius: 8,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                paddingVertical: 8
-                              }
+                              styles.actionBtnText,
+                              { color: colors.text, fontWeight: "600" },
                             ]}
                           >
-                            <Text
-                              style={[
-                                styles.actionBtnText,
-                                { color: colors.text, fontWeight: "600", fontSize: 13 },
-                              ]}
-                            >
-                              Draft
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
+                            Draft
+                          </Text>
+                        </BlurView>
+                      </TouchableOpacity>
 
-                        <TouchableOpacity
-                          onPress={() => handleSmartReply(reply, "send")}
-                          disabled={!!drafting}
-                          activeOpacity={0.7}
-                          style={{ flex: 1 }}
+                      <TouchableOpacity
+                        onPress={() => handleSmartReply(reply, "send")}
+                        disabled={!!drafting}
+                        activeOpacity={0.7}
+                        style={{ flex: 1 }}
+                      >
+                        <LinearGradient
+                          colors={[colors.primary, (colors.primaryLight || colors.primary) as string]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={[
+                            styles.sendBtnGradient,
+                            {
+                              shadowOpacity: theme === 'dark' ? 0.4 : 0.2,
+                              borderWidth: theme === 'dark' ? 1 : 0,
+                              borderColor: 'rgba(255,255,255,0.2)',
+                            }
+                          ]}
                         >
-                          <LinearGradient
-                            colors={[colors.primary, colors.primaryLight]} // Use gradient for primary action
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
+                          {drafting === reply ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Send size={16} color="#fff" />
+                          )}
+                          <Text
                             style={[
-                              styles.sendBtnGradient,
-                              {
-                                borderRadius: 8,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                paddingVertical: 8
-                              }
+                              styles.actionBtnText,
+                              { color: "#fff", fontWeight: "700" },
                             ]}
                           >
-                            {drafting === reply ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Text
-                                  style={[
-                                    styles.actionBtnText,
-                                    { color: "#fff", fontWeight: "600", fontSize: 13 },
-                                  ]}
-                                >
-                                  Send
-                                </Text>
-                                <Send size={12} color="#fff" />
-                              </View>
-                            )}
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      </View>
+                            Send
+                          </Text>
+                          {!subscriptionService.isPro() && (
+                            <ProBadge size="small" />
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
 
                     {/* Feedback for Replies */}
                     <View style={[styles.feedbackButtons, { marginTop: 12, justifyContent: 'flex-end' }]}>
@@ -1122,37 +1231,143 @@ export default function EmailDetailScreen() {
                         <ThumbsDown size={14} color={feedback.REPLIES === 'negative' ? colors.primary : colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             </Animated.View>
           )}
 
-          {/* Chat Section Removed */}
-
-          {/* Critical Actions at the Bottom (Thumb Zone) */}
-          {detectedIntent && (
-            <Animated.View 
-              entering={FadeInUp.delay(400)}
-              style={{ paddingBottom: 40 }}
-            >
-              <SmartHeader
-                intent={detectedIntent.type}
-                data={detectedIntent.details}
-                confidence={detectedIntent.confidence}
-                onPaywallTrigger={(feature) => {
-                  setPaywallFeature(feature);
-                  setShowPaywall(true);
-                }}
-              />
-              <View style={{ alignItems: 'center', marginTop: 12 }}>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', opacity: 0.5 }}>
-                   <Lock size={12} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                   <Text style={{ fontSize: 10, color: colors.textSecondary }}>End-to-End Encrypted Financial Protection</Text>
-                 </View>
+          {/* Chat with Data Section */}
+          <Animated.View
+            entering={FadeInDown.delay(350)}
+            style={styles.chatSection}
+          >
+            <View style={styles.sectionHeader}>
+              <View
+                style={[
+                  styles.todoIconContainer,
+                  { backgroundColor: colors.primary + "20" },
+                ]}
+              >
+                <Bot size={16} color={colors.primary} />
               </View>
-            </Animated.View>
-          )}
+              <Text
+                style={[styles.sectionTitle, { color: colors.textSecondary }]}
+              >
+                Ask FileFlow
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.chatCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              {chatMessages.length === 0 ? (
+                <View style={styles.emptyChatState}>
+                  <Text
+                    style={[
+                      styles.emptyChatText,
+                      { color: colors.textTertiary },
+                    ]}
+                  >
+                    Ask me anything about this {type}.
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                    {["Summarize this", "Action items?", "Key dates?"].map(
+                      (txt) => (
+                        <TouchableOpacity
+                          key={txt}
+                          onPress={() => setChatInput(txt)}
+                          style={[
+                            styles.suggestionChip,
+                            { borderColor: colors.border },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.suggestionText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {txt}
+                          </Text>
+                        </TouchableOpacity>
+                      )
+                    )}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.chatHistory}>
+                  {chatMessages.map((msg, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.chatBubble,
+                        msg.sender === "user"
+                          ? {
+                              alignSelf: "flex-end",
+                              backgroundColor: colors.primary,
+                            }
+                          : {
+                              alignSelf: "flex-start",
+                              backgroundColor: colors.background,
+                            },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chatText,
+                          {
+                            color: msg.sender === "user" ? "#fff" : colors.text,
+                          },
+                        ]}
+                      >
+                        {msg.text}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View
+                style={[
+                  styles.chatInputRow,
+                  {
+                    borderColor: colors.border,
+                    borderTopWidth: 1,
+                    marginTop: 12,
+                    paddingTop: 12,
+                  },
+                ]}
+              >
+                <TextInput
+                  style={[styles.chatInput, { color: colors.text }]}
+                  placeholder="Type a question..."
+                  placeholderTextColor={colors.textTertiary}
+                  value={chatInput}
+                  onChangeText={setChatInput}
+                  multiline
+                />
+                <TouchableOpacity
+                  onPress={handleSendChat}
+                  disabled={chatLoading || !chatInput}
+                  style={[
+                    styles.sendIconBtn,
+                    { backgroundColor: colors.primary },
+                    (chatLoading || !chatInput) && { opacity: 0.5 },
+                  ]}
+                >
+                  {chatLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Send size={16} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1161,7 +1376,6 @@ export default function EmailDetailScreen() {
         visible={showPaywall}
         onClose={() => setShowPaywall(false)}
         feature={paywallFeature}
-        userEmail={userInfo?.email}
       />
     </View>
   );
@@ -1201,9 +1415,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderRadius: 24,
     overflow: "hidden",
-    borderWidth: 0,
+    borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
-    elevation: 0,
+    elevation: 2,
   },
   attachmentGradient: {
     padding: 20,
@@ -1239,7 +1453,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
     gap: 10,
   },
   sparkleContainer: {
@@ -1270,16 +1484,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
   },
   summaryCard: {
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 0,
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
     overflow: "hidden",
-    elevation: 0,
+    elevation: 2,
   },
   summaryText: { fontSize: 15, lineHeight: 24, fontWeight: "500" },
   todoCard: {
@@ -1343,7 +1558,7 @@ const styles = StyleSheet.create({
   bodyText: { fontSize: 14, lineHeight: 22, fontWeight: "500" },
   repliesSection: { marginBottom: 24 },
   repliesContainer: { gap: 8 },
-  replyCard: { padding: 16, borderRadius: 16, marginBottom: 8, borderWidth: 0 },
+  replyCard: { padding: 16, borderRadius: 18, marginBottom: 8, borderWidth: 1 },
   replyBody: {
     fontSize: 14,
     lineHeight: 22,
@@ -1368,9 +1583,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
   },
   sendBtnGradient: {
@@ -1378,9 +1593,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 8,
   },
   actionBtnText: { fontSize: 14, letterSpacing: 0.3 },
   feedbackButtons: {

@@ -5,6 +5,28 @@ import { appStorage } from '@/utils/storage';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+// Shared typography scale for consistent text styling across the app
+const TYPOGRAPHY = {
+  headline: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    letterSpacing: -0.4,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    letterSpacing: -0.2,
+  },
+  body: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  caption: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+  },
+};
+
 export const LIGHT_COLORS = {
   primary: '#334155', // Slate 700
   primaryRGB: '51, 65, 85',
@@ -24,6 +46,9 @@ export const LIGHT_COLORS = {
   glassBorder: 'rgba(255, 255, 255, 0.5)',
   gradientStart: '#f8fafc',
   gradientEnd: '#e2e8f0',
+  // Accent colors for AI elements and highlights
+  aiAccent: '#8B5CF6',
+  aiAccentSecondary: '#3B82F6',
 };
 
 export const DARK_COLORS = {
@@ -45,6 +70,8 @@ export const DARK_COLORS = {
   glassBorder: 'rgba(255, 255, 255, 0.1)',
   gradientStart: '#0f172a',
   gradientEnd: '#1e293b',
+  aiAccent: '#8B5CF6',
+  aiAccentSecondary: '#3B82F6',
 };
 
 interface ThemeContextType {
@@ -53,6 +80,7 @@ interface ThemeContextType {
   setPreference: (pref: ThemePreference) => Promise<void>;
   colors: typeof LIGHT_COLORS;
   isDark: boolean;
+  typography: typeof TYPOGRAPHY;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -115,7 +143,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   if (!isLoaded) return null;
 
   return (
-    <ThemeContext.Provider value={{ theme, preference, setPreference, colors, isDark }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        preference,
+        setPreference,
+        colors,
+        isDark,
+        typography: TYPOGRAPHY,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

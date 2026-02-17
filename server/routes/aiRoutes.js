@@ -23,5 +23,6 @@ const upload = multer({ dest: 'uploads/' });
 
 router.post('/chat', upload.single('file'), aiController.chat);
 router.post('/intent', aiController.detectIntent);
+router.post('/recap', aiController.getRecap);
 
 module.exports = router;

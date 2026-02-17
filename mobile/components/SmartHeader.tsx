@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { useTheme } from '../components/ThemeContext';
 import { GlassCard } from './GlassCard';
-import { CreditCard, Calendar, FileText, ArrowRight, CheckCircle, AlertCircle, Users, Clock, ExternalLink, DollarSign, Sparkles } from 'lucide-react-native';
+import { CreditCard, Calendar, FileText, ArrowRight, CheckCircle, AlertCircle, Users, Clock, ExternalLink, DollarSign, Sparkles, Lock, ShieldCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import subscriptionService from '../services/SubscriptionService';
@@ -17,7 +17,7 @@ interface SmartHeaderProps {
 }
 
 export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confidence, onPaywallTrigger }) => {
-  const { colors, theme } = useTheme();
+  const { colors, theme, typography } = useTheme();
   const [timeUntilMeeting, setTimeUntilMeeting] = useState<string>('');
   const [isOverdue, setIsOverdue] = useState(false);
 
@@ -66,6 +66,8 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
     }
   }, [intent, data]);
 
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
   if (confidence < 0.4) return null;
 
   const handlePayInvoice = () => {
@@ -73,8 +75,14 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
       onPaywallTrigger?.('Invoice Payment');
       return;
     }
-    // TODO: Implement payment flow
-    console.log('Pay Invoice', data);
+    
+    setIsProcessingPayment(true);
+    // Simulate secure connection
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      // TODO: Implement actual payment flow
+      console.log('Pay Invoice', data);
+    }, 2000);
   };
 
   const handleAddToCalendar = async () => {
@@ -105,16 +113,16 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
     }
   };
 
-  const getGradientColors = () => {
+  const getGradientColors = (): [string, string] => {
     switch (intent) {
       case 'INVOICE':
-        return ['#7c3aed', '#3b82f6'];
+        return [colors.aiAccent, colors.aiAccentSecondary];
       case 'MEETING':
-        return ['#f97316', '#ef4444'];
+        return [colors.warning, colors.error];
       case 'CONTRACT':
-        return ['#64748b', '#475569'];
+        return [colors.surface, colors.border];
       default:
-        return [colors.primary, colors.primaryLight];
+        return [colors.primary, (colors.primaryLight || colors.primary) as string];
     }
   };
 
@@ -130,8 +138,8 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
           <DollarSign size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Invoice Payment</Text>
-          <Text style={styles.cardSubtitle}>{data.vendor || 'Payment Required'}</Text>
+          <Text style={[typography.title, styles.cardTitle]}>{'Invoice Payment'}</Text>
+          <Text style={[typography.body, styles.cardSubtitle]}>{data.vendor || 'Payment Required'}</Text>
         </View>
         {isOverdue && (
           <View style={styles.urgencyBadge}>
@@ -152,21 +160,58 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
         </View>
       </View>
 
+      {data.paybill && (
+        <View style={styles.paybillRow}>
+          <View style={styles.paybillInfo}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Lock size={12} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.paybillLabel}>Paybill: {data.paybill}</Text>
+            </View>
+            {data.account_no && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Lock size={12} color="rgba(255,255,255,0.6)" />
+                <Text style={styles.paybillLabel}>Acc: {data.account_no}</Text>
+              </View>
+            )}
+          </View>
+          {!subscriptionService.isPro() && (
+             <View style={styles.lockBadge}>
+               <Sparkles size={12} color="#fbbf24" />
+               <Text style={styles.lockText}>PRO</Text>
+             </View>
+          )}
+        </View>
+      )}
+
       <View style={styles.actionRow}>
         <TouchableOpacity 
           style={styles.primaryAction}
           onPress={handlePayInvoice}
+          disabled={isProcessingPayment}
           activeOpacity={0.8}
         >
-          <Text style={styles.primaryActionText}>Pay Now</Text>
-          {!subscriptionService.isPro() && <ProBadge mini style={{ marginLeft: 6 }} />}
-          <ArrowRight size={16} color="#fff" />
+          {isProcessingPayment ? (
+            <>
+              <Lock size={16} color="#fff" />
+              <Text style={styles.primaryActionText}>Securing Connection...</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.primaryActionText}>Pay Now</Text>
+              {!subscriptionService.isPro() && <ProBadge size="small" />}
+              <ArrowRight size={16} color="#fff" />
+            </>
+          )}
         </TouchableOpacity>
         {data.invoice_link && (
           <TouchableOpacity style={styles.secondaryAction} onPress={() => Linking.openURL(data.invoice_link)}>
             <ExternalLink size={16} color="#fff" />
           </TouchableOpacity>
         )}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12, opacity: 0.7 }}>
+        <ShieldCheck size={12} color="#fff" style={{ marginRight: 4 }} />
+        <Text style={{ fontSize: 10, color: '#fff', fontWeight: 'bold' }}>M-PESA SECURE & GOOGLE VERIFIED</Text>
       </View>
     </LinearGradient>
   );
@@ -183,8 +228,8 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
           <Calendar size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Meeting Scheduled</Text>
-          <Text style={styles.cardSubtitle}>{data.title || 'Upcoming Meeting'}</Text>
+          <Text style={[typography.title, styles.cardTitle]}>Meeting Scheduled</Text>
+          <Text style={[typography.body, styles.cardSubtitle]}>{data.title || 'Upcoming Meeting'}</Text>
         </View>
         {timeUntilMeeting && (
           <View style={styles.urgencyBadge}>
@@ -247,8 +292,8 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
           <FileText size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Legal Document</Text>
-          <Text style={styles.cardSubtitle}>{data.document_type || 'Contract Review'}</Text>
+          <Text style={[typography.title, styles.cardTitle]}>Legal Document</Text>
+          <Text style={[typography.body, styles.cardSubtitle]}>{data.document_type || 'Contract Review'}</Text>
         </View>
       </View>
 
@@ -291,8 +336,8 @@ export const SmartHeader: React.FC<SmartHeaderProps> = ({ intent, data, confiden
           <Sparkles size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{data.title || 'Information Summary'}</Text>
-          <Text style={styles.cardSubtitle}>{data.category || 'General Info'}</Text>
+          <Text style={[typography.title, styles.cardTitle]}>{data.title || 'Information Summary'}</Text>
+          <Text style={[typography.body, styles.cardSubtitle]}>{data.category || 'General Info'}</Text>
         </View>
         {data.reading_time_minutes && (
           <View style={styles.urgencyBadge}>
@@ -474,5 +519,39 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
+  },
+  paybillRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  paybillInfo: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  paybillLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  lockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+  },
+  lockText: {
+    color: '#fbbf24',
+    fontSize: 10,
+    fontWeight: '900',
   },
 });

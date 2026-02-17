@@ -12,6 +12,13 @@ const UserSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  googleId: {
+    type: String,
+    index: true,
+  },
+  picture: {
+    type: String,
+  },
   
   // Subscription Management
   subscription: {

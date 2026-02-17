@@ -1,4 +1,4 @@
-import axios from 'axios';
+import api from './api';
 import { EmailAttachment, UnreadEmail } from '../types';
 import { GMAIL_API_BASE, MAX_EMAILS_PER_SYNC } from '../utils/constants';
 import authService from './auth';
@@ -54,7 +54,7 @@ class GmailService {
       const accessToken = await authService.getValidAccessToken();
       if (!accessToken) throw new Error('No valid token');
 
-      const response = await axios.get(
+      const response = await api.get(
         `${GMAIL_API_BASE}/users/me/history`,
         {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -121,7 +121,7 @@ class GmailService {
       }
 
       // Get current profile to update historyId for next time
-      const profile = await axios.get(`${GMAIL_API_BASE}/users/me/profile`, {
+      const profile = await api.get(`${GMAIL_API_BASE}/users/me/profile`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       latestHistoryId = profile.data.historyId;
@@ -142,7 +142,7 @@ class GmailService {
       q = `${q} ${customQuery}`;
     }
 
-    const searchResponse = await axios.get(
+    const searchResponse = await api.get(
       `${GMAIL_API_BASE}/users/me/messages`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -167,7 +167,7 @@ class GmailService {
       const accessToken = await authService.getValidAccessToken();
       if (!accessToken) throw new Error('No valid access token');
 
-      const response = await axios.get(
+      const response = await api.get(
         `${GMAIL_API_BASE}/users/me/messages`,
         {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -179,7 +179,7 @@ class GmailService {
       const unreadEmails: UnreadEmail[] = [];
 
       for (const msg of messages) {
-        const detailResp = await axios.get(
+        const detailResp = await api.get(
           `${GMAIL_API_BASE}/users/me/messages/${msg.id}`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
@@ -212,7 +212,7 @@ class GmailService {
     accessToken: string
   ): Promise<EmailAttachment[]> {
     try {
-      const response = await axios.get(
+      const response = await api.get(
         `${GMAIL_API_BASE}/users/me/messages/${messageId}`,
         {
           headers: {
@@ -272,7 +272,7 @@ class GmailService {
         throw new Error('No valid access token');
       }
 
-      const response = await axios.get(
+      const response = await api.get(
         `${GMAIL_API_BASE}/users/me/messages/${messageId}/attachments/${attachmentId}`,
         {
           headers: {
@@ -297,7 +297,7 @@ class GmailService {
       const accessToken = await authService.getValidAccessToken();
       if (!accessToken) throw new Error('No valid token');
 
-      const response = await axios.get(
+      const response = await api.get(
         `${GMAIL_API_BASE}/users/me/messages/${messageId}`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
@@ -348,7 +348,7 @@ class GmailService {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-      await axios.post(
+      await api.post(
         `${GMAIL_API_BASE}/users/me/drafts`,
         {
           message: {
@@ -391,7 +391,7 @@ class GmailService {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-      await axios.post(
+      await api.post(
         `${GMAIL_API_BASE}/users/me/messages/send`,
         {
           raw: encodedMessage,
@@ -418,7 +418,7 @@ class GmailService {
         throw new Error('No valid access token');
       }
 
-      await axios.post(
+      await api.post(
         `${GMAIL_API_BASE}/users/me/messages/${messageId}/modify`,
         {
           removeLabelIds: ['UNREAD'],

@@ -9,7 +9,7 @@ const huggingFaceService = require('./huggingFaceService');
 const classifierAgent = require('../agents/ClassifierAgent');
 const summaryAgent = require('../agents/SummaryAgent');
 const extractionAgent = require('../agents/ExtractionAgent');
-// const actionAgent = require('../agents/ActionAgent'); // Future use
+const actionAgent = require('../agents/ActionAgent');
 
 const hasGemini = !!process.env.GEMINI_API_KEY;
 const hasHuggingFace = !!process.env.HUGGINGFACE_API_KEY;
@@ -72,12 +72,15 @@ class UnifiedAIService {
   /**
    * NEW: Check EmailAnalysis (permanent storage) or generate and save
    */
-  async getOrCreateAnalysis(emailId, userId, text, userName) {
+  async getOrCreateAnalysis(emailId, userId, text, userName, tier = 'free', from = '') {
     try {
       if (!emailId || !userId) {
         console.warn('Missing emailId or userId, skipping permanent storage');
         return null;
       }
+
+      const replyCount = tier === 'pro' ? 3 : 1;
+      const isNoReply = from.toLowerCase().includes('noreply');
 
       // 1. Check if analysis exists
       let analysis = await EmailAnalysis.findOne({ emailId, userId });
@@ -93,29 +96,36 @@ class UnifiedAIService {
       }
 
       // 2. Generate all AI content
-      console.log(`🤖 Generating new analysis for ${emailId}`);
+      console.log(`🤖 Generating new ${tier} analysis for ${emailId} (No-Reply: ${isNoReply})`);
       
-      const [summaryResult, replies, actionItemsResult, intent] = await Promise.all([
-        summaryAgent.execute(text, {}).catch(() => ({ summary: DEFAULT_SUMMARY, confidence: 0.5 })),
-        this.generateSmartReplies(text, 3, userName).catch(() => DEFAULT_REPLIES),
-        this.extractActionItems(text, userName).catch(() => ({ tasks: [], confidence: 0 })),
-        this.detectIntent(text, emailId).catch(() => ({ intent: 'INFO', confidence: 0, details: {} }))
+      const [summaryResult, replies, actionItemsResult, intentResult] = await Promise.all([
+        summaryAgent.execute(text, { tier }).catch(() => ({ summary: DEFAULT_SUMMARY, confidence: 0.5 })),
+        isNoReply ? Promise.resolve([]) : this.generateSmartReplies(text, replyCount, userName, emailId, tier).catch(() => DEFAULT_REPLIES),
+        isNoReply ? Promise.resolve({ tasks: [], confidence: 1 }) : this.extractActionItems(text, userName, tier, emailId).catch(() => ({ tasks: [], confidence: 0 })),
+        this.detectIntent(text, emailId, tier).catch(() => ({ intent: 'INFO', confidence: 0, details: {}, actions: [] }))
       ]);
+
+      // Refine summary if it's a no-reply
+      let finalSummary = typeof summaryResult === 'string' ? summaryResult : (summaryResult.summary || DEFAULT_SUMMARY);
+      if (isNoReply && !finalSummary.startsWith('[System Notice]')) {
+        finalSummary = `[System Notice] ${finalSummary}`;
+      }
 
       // 3. Save to EmailAnalysis (permanent)
       analysis = await EmailAnalysis.create({
         emailId,
         userId,
         summary: {
-          text: typeof summaryResult === 'string' ? summaryResult : (summaryResult.summary || DEFAULT_SUMMARY),
+          text: finalSummary,
           confidence: summaryResult.confidence || 0.85 // Default high confidence if not provided
         },
         replies: Array.isArray(replies) ? replies : DEFAULT_REPLIES,
         actionItems: actionItemsResult.tasks || [],
         intent: {
-          type: intent.intent || 'INFO',
-          confidence: intent.confidence || 0,
-          details: intent.details || {}
+          type: intentResult.intent || 'INFO',
+          confidence: intentResult.confidence || 0,
+          details: intentResult.details || {},
+          actions: intentResult.actions || [] // Include generated actions
         }
       });
 
@@ -133,12 +143,12 @@ class UnifiedAIService {
     });
   }
 
-  async generateSmartReplies(text, count = 3, userName = 'the user', resourceId) {
+  async generateSmartReplies(text, count = 3, userName = 'the user', resourceId, tier = 'free') {
     return await this.getCachedResult(resourceId, 'REPLIES', { count, userName }, async () => {
       // Logic copied from previous implementation
       if (hasGemini) {
         try {
-          const replies = await geminiService.generateSmartReplies(text, count, userName);
+          const replies = await geminiService.generateSmartReplies(text, count, userName, { tier });
           return ensureRepliesArray(replies, count);
         } catch (err) {
           console.warn('Gemini replies failed, trying HuggingFace:', err.message);
@@ -174,28 +184,31 @@ class UnifiedAIService {
     return 'Personal';
   }
 
-  async extractActionItems(text, userName = 'the user') {
-    if (hasGemini) {
-      try {
-        return await geminiService.extractActionItems(text, userName);
-      } catch (err) {
-        console.warn('Gemini extraction failed, trying HuggingFace:', err.message);
+  async extractActionItems(text, userName = 'the user', tier = 'free', resourceId) {
+    return await this.getCachedResult(resourceId, 'TODO', { tier }, async () => {
+      const limit = tier === 'pro' ? 5 : 2; // Logic moved inside generator for consistency, but limit is passed to agent
+      if (hasGemini) {
+        try {
+          return await geminiService.extractActionItems(text, userName, limit);
+        } catch (err) {
+          console.warn('Gemini extraction failed, trying HuggingFace:', err.message);
+        }
       }
-    }
-    if (hasHuggingFace) {
-      try {
-        return await huggingFaceService.extractActionItems(text, userName);
-      } catch (err) {
-        console.warn('HuggingFace extraction failed:', err.message);
+      if (hasHuggingFace) {
+        try {
+          return await huggingFaceService.extractActionItems(text, userName);
+        } catch (err) {
+          console.warn('HuggingFace extraction failed:', err.message);
+        }
       }
-    }
-    return { tasks: [], confidence: 0 };
+      return { tasks: [], confidence: 0 };
+    });
   }
 
   async *generateSummaryStream(text, customPrompt) {
     if (hasGemini) {
       try {
-        const prompt = customPrompt || "Summarize this email in a professional, concise tone (max 2 sentences). Focus on the core intent, requested actions, and any mentioned deadlines.";
+        const prompt = customPrompt || "Summarize this email in a professional, concise tone. YOU MUST NOT EXCEED 2 SENTENCES. Focus on the core intent and requested actions.";
         const combinedPrompt = `${prompt}\n\nEmail Content:\n${text}`;
         yield* geminiService.generateWithFallbackStream(combinedPrompt);
         return;
@@ -247,8 +260,9 @@ class UnifiedAIService {
     }
     return query;
   }
-  async detectIntent(text, resourceId) {
-    return await this.getCachedResult(resourceId, 'INTENT', { len: text.length }, async () => {
+
+  async detectIntent(text, resourceId, tier = 'free') {
+    return await this.getCachedResult(resourceId, 'INTENT', { len: text.length, tier }, async () => {
         try {
             // Step 1: Classification (Mistral -> Gemini)
             const classification = await classifierAgent.execute(text, {});
@@ -259,18 +273,55 @@ class UnifiedAIService {
             if (['INVOICE', 'MEETING', 'CONTRACT'].includes(intent)) {
                 details = await extractionAgent.execute(text, { intent });
             }
+
+            // Step 3: Suggest Actions (ActionAgent)
+            const actions = await actionAgent.execute(text, { intent, data: details, tier: tier }) || [];
     
             return {
                 intent,
                 confidence: classification.confidence,
                 details,
+                actions,
                 source: classification.source
             };
         } catch (e) {
             console.error("Agent orchestration failed:", e);
-            return { intent: "INFO", confidence: 0, details: {} };
+            return { intent: "INFO", confidence: 0, details: {}, actions: [] };
         }
     });
+  }
+  
+  /**
+   * Generates a holistic daily recap for the user based on aggregated unread items.
+   */
+  async generateUserRecap(userId, items) {
+    try {
+      if (!items || items.length === 0) return "You're all caught up! No urgent items found.";
+
+      // Aggregate context from items
+      const context = items.map(item => {
+        const type = item.id ? 'Email' : 'File';
+        const title = item.subject || item.filename || 'Untitled';
+        const snippet = item.snippet || item.category || '';
+        return `[${type}] ${title}: ${snippet}`;
+      }).join('\n');
+
+      const prompt = `
+        Act as a proactive personal assistant. Based on the following recent items, provide a concise (max 3 sentences) morning briefing.
+        Focus on what needs immediate attention and summarize the general mood of the feed.
+        Items:
+        ${context}
+      `;
+
+      // Use a cache for user-level recap (refreshed periodically or on manual sync)
+      return await this.getCachedResult(`recap_${userId}`, 'USER_REPLY', { count: items.length }, async () => {
+        const response = await summaryAgent.execute(prompt, { promptType: 'briefing' });
+        return typeof response === 'string' ? response : (response.summary || response);
+      });
+    } catch (error) {
+      console.error('User Recap Generation failed:', error);
+      return "Unable to generate briefing at this time. You have items waiting in your inbox.";
+    }
   }
 }
 

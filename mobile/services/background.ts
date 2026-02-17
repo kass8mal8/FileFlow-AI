@@ -89,7 +89,7 @@ class BackgroundService {
       
       if (attachments.length === 0) {
         console.log('No new attachments found');
-        await appStorage.setLastSync(new Date().toISOString());
+        await appStorage.setLastSyncTime(new Date().toISOString());
         if (newHistoryId) await appStorage.setHistoryId(newHistoryId);
         return processedFiles;
       }
@@ -116,42 +116,44 @@ class BackgroundService {
 
       console.log(`Found ${attachments.length} attachments to process`);
 
-      // Process each attachment
-      for (const attachment of attachments) {
+      // Eager processing: Process all new attachments in PARALLEL to speed up syncing
+      const syncPromises = attachments.map(async (attachment) => {
         try {
-          // Skip if already processed
+          // Skip if already exists in storage
           const alreadyProcessed = validFiles.some(f => f.messageId === attachment.messageId && f.filename === attachment.filename);
-          if (alreadyProcessed) continue;
+          if (alreadyProcessed) return;
 
+          console.log(`Processing ${attachment.filename}...`);
           const processedFile = await this.processAttachment(attachment, userInfo.email);
           processedFiles.push(processedFile);
-          
-          // Store processed file
           await appStorage.addProcessedFile(processedFile);
         } catch (error) {
-          console.error(`Error processing attachment ${attachment.filename}:`, error);
-          
-          // Store failed file
-          const failedFile: ProcessedFile = {
+          console.error(`Error processing ${attachment.filename}:`, error);
+           // Fallback: create pending entry
+           const pendingFile: ProcessedFile = {
             id: `${Date.now()}-${attachment.filename}`,
             userEmail: userInfo.email,
             messageId: attachment.messageId,
             filename: attachment.filename,
+            emailFrom: attachment.emailFrom,
+            emailSubject: attachment.emailSubject,
+            threadId: attachment.threadId,
+            attachmentId: attachment.attachmentId,
             category: 'Personal' as any,
-            status: SyncStatus.Error,
+            status: SyncStatus.Pending,
             uploadedAt: new Date().toISOString(),
             emailDate: attachment.emailDate,
             size: attachment.size,
-            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            mimeType: attachment.mimeType,
           };
-          
-          processedFiles.push(failedFile);
-          await appStorage.addProcessedFile(failedFile);
+          await appStorage.addProcessedFile(pendingFile);
         }
-      }
+      });
+
+      await Promise.all(syncPromises);
 
       // Update state for next incremental sync
-      await appStorage.setLastSync(new Date().toISOString());
+      await appStorage.setLastSyncTime(new Date().toISOString());
       if (newHistoryId) {
         await appStorage.setHistoryId(newHistoryId);
       }

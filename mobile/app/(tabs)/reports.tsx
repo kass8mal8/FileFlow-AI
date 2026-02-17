@@ -1,6 +1,5 @@
 import { FileCategory, ProcessedFile, SyncStatus } from "@/types";
 import { appStorage } from "@/utils/storage";
-import { BlurView } from "expo-blur";
 import {
   FileText,
   Mail,
@@ -36,7 +35,8 @@ const screenWidth = Dimensions.get("window").width;
 export default function ReportsScreen() {
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const { colors, theme } = useTheme();
+  const [rangeDays, setRangeDays] = useState<7 | 30>(7);
+  const { colors, theme, typography } = useTheme();
 
   useEffect(() => {
     async function loadData() {
@@ -57,7 +57,7 @@ export default function ReportsScreen() {
 
     const dailyActivity: { [key: string]: number } = {};
     const now = new Date();
-    for (let i = 6; i >= 0; i--) {
+    for (let i = rangeDays - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(now.getDate() - i);
       dailyActivity[d.toISOString().split("T")[0]] = 0;
@@ -89,13 +89,19 @@ export default function ReportsScreen() {
         legendFontSize: 11,
     }));
 
+    const activityKeys = Object.keys(dailyActivity);
+    const activityValues = Object.values(dailyActivity);
+    const filesInRange = activityValues.reduce((sum, v) => sum + v, 0);
+
     const barData = {
-      labels: Object.keys(dailyActivity).map((d) => d.split("-")[2]),
-      datasets: [{ 
-        data: Object.values(dailyActivity),
-        color: (opacity = 1) => `rgba(124, 58, 237, ${opacity})`, // Violet 600
-        strokeWidth: 3
-      }],
+      labels: activityKeys.map((d) => d.split("-")[2]),
+      datasets: [
+        {
+          data: activityValues,
+          color: (opacity = 1) => `rgba(124, 58, 237, ${opacity})`, // Violet 600
+          strokeWidth: 3,
+        },
+      ],
     };
 
     // AI Narrative & Risks
@@ -109,8 +115,9 @@ export default function ReportsScreen() {
       estimatedTotalEmails,
       overdueInvoices,
       urgentDocs,
+      filesInRange,
     };
-  }, [files, colors]);
+  }, [files, colors, rangeDays]);
 
   const chartConfig = {
     backgroundColor: "transparent",
@@ -139,24 +146,53 @@ export default function ReportsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} />
 
-      <BlurView intensity={theme === 'dark' ? 40 : 80} tint={theme === 'dark' ? 'dark' : 'light'} style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: colors.background,
+            borderColor: colors.border,
+          },
+        ]}
+      >
         <View style={styles.headerContent}>
           <View>
-            <Text style={[styles.headerPreTitle, { color: colors.primary }]}>INTELLIGENCE</Text>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Center</Text>
+            <Text
+              style={[
+                typography.caption,
+                styles.headerPreTitle,
+                { color: colors.primary },
+              ]}
+            >
+              INTELLIGENCE
+            </Text>
+            <Text
+              style={[
+                typography.headline,
+                styles.headerTitle,
+                { color: colors.text },
+              ]}
+            >
+              Center
+            </Text>
           </View>
-          <TouchableOpacity style={[styles.profileBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <TouchableOpacity
+            style={[
+              styles.profileBtn,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <Zap size={18} color={colors.primary} />
           </TouchableOpacity>
         </View>
-      </BlurView>
+      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* AI Global Hero */}
         <Animated.View entering={FadeInDown.delay(100)}>
           <LinearGradient
-            colors={theme === 'dark' ? ['#7c3aed', '#4f46e5'] : ['#8B5CF6', '#6366F1']}
+            colors={[colors.aiAccent, colors.aiAccentSecondary]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.heroCard}
@@ -166,10 +202,22 @@ export default function ReportsScreen() {
                 <Sparkles size={14} color="#fff" />
                 <Text style={styles.sparkleBadgeText}>AI INSIGHTS</Text>
               </View>
-              <Text style={styles.heroTime}>Updated 2m ago</Text>
+              <Text style={styles.heroTime}>
+                Based on your last {rangeDays} days
+              </Text>
             </View>
-            <Text style={styles.heroNarrative}>
-                Your business activity has increased by <Text style={{fontWeight: '900'}}>12%</Text> this week. We detected <Text style={{fontWeight: '900'}}>{stats.overdueInvoices}</Text> priority items requiring your immediate attention.
+            <Text style={[typography.body, styles.heroNarrative]}>
+              In the last{" "}
+              <Text style={styles.heroHighlight}>{rangeDays}</Text> days you
+              processed{" "}
+              <Text style={styles.heroHighlight}>{stats.filesInRange}</Text>{" "}
+              files. We see{" "}
+              <Text style={styles.heroHighlight}>
+                {stats.overdueInvoices}
+              </Text>{" "}
+              invoice items and{" "}
+              <Text style={styles.heroHighlight}>{stats.urgentDocs}</Text>{" "}
+              legal docs that may need your attention.
             </Text>
             <TouchableOpacity style={styles.heroAction}>
               <Text style={styles.heroActionText}>View Details</Text>
@@ -223,7 +271,49 @@ export default function ReportsScreen() {
         <View style={[styles.insightCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.innerHeader}>
                 <TrendingUp size={18} color={colors.primary} />
-                <Text style={[styles.innerTitle, { color: colors.text }]}>Activity Pulse</Text>
+                <Text style={[typography.title, styles.innerTitle, { color: colors.text }]}>
+                  Activity Pulse
+                </Text>
+                <View style={styles.rangeToggle}>
+                  <TouchableOpacity
+                    onPress={() => setRangeDays(7)}
+                    style={[
+                      styles.rangeChip,
+                      rangeDays === 7 && [
+                        styles.rangeChipActive,
+                        { backgroundColor: colors.primary },
+                      ],
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.rangeChipText,
+                        rangeDays === 7 && { color: "#fff" },
+                      ]}
+                    >
+                      7D
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setRangeDays(30)}
+                    style={[
+                      styles.rangeChip,
+                      rangeDays === 30 && [
+                        styles.rangeChipActive,
+                        { backgroundColor: colors.primary },
+                      ],
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.rangeChipText,
+                        rangeDays === 30 && { color: "#fff" },
+                      ]}
+                    >
+                      30D
+                    </Text>
+                  </TouchableOpacity>
+                </View>
             </View>
             <LineChart
                 data={stats.barData}
@@ -241,7 +331,9 @@ export default function ReportsScreen() {
         <View style={[styles.insightCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.innerHeader}>
                 <PieChartIcon size={18} color={colors.primary} />
-                <Text style={[styles.innerTitle, { color: colors.text }]}>Category Health</Text>
+                <Text style={[typography.title, styles.innerTitle, { color: colors.text }]}>
+                  Category Health
+                </Text>
             </View>
             <PieChart
                 data={stats.emailOverviewData}
@@ -272,7 +364,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
   },
   headerContent: { 
     paddingHorizontal: 24, 
@@ -311,6 +402,7 @@ const styles = StyleSheet.create({
   sparkleBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
   heroTime: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
   heroNarrative: { fontSize: 17, color: '#fff', lineHeight: 26, fontWeight: '500' },
+  heroHighlight: { fontWeight: '900' },
   heroAction: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -345,4 +437,24 @@ const styles = StyleSheet.create({
   insightCard: { padding: 20, borderRadius: 28, borderWidth: 1, marginBottom: 20, elevation: 2 },
   innerHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   innerTitle: { fontSize: 16, fontWeight: '800' },
+  rangeToggle: {
+    flexDirection: 'row',
+    marginLeft: 'auto',
+    gap: 6,
+  },
+  rangeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.6)', // slate-400
+  },
+  rangeChipActive: {
+    borderColor: 'transparent',
+  },
+  rangeChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+  },
 });

@@ -10,10 +10,10 @@ export default {
     tabIconSelected: '#334155',
   },
   dark: {
-    text: '#f8fafc', // Slate 50
-    background: '#0f172a', // Slate 900
+    text: '#eceef2', // Desaturated Slate 50
+    background: '#121212', // Inclusive Dark Mode (Avoids pure black)
     tint: '#94a3b8', // Slate 400
     tabIconDefault: '#475569', // Slate 600
-    tabIconSelected: '#f8fafc',
+    tabIconSelected: '#eceef2',
   },
 };

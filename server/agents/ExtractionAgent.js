@@ -26,8 +26,8 @@ class ExtractionAgent extends BaseAgent {
     }
 
     try {
-        const raw = await geminiService.generateWithFallback(prompt, { responseMimeType: "application/json" });
-        return JSON.parse(raw);
+        const raw = await geminiService.generateWithFallback(prompt, { responseMimeType: "application/json", tier: context.tier });
+        return JSON.parse(geminiService._cleanJson(raw));
     } catch (e) {
         this.log(`Extraction failed: ${e.message}`);
         return {};

@@ -124,19 +124,21 @@ export const appStorage = {
   },
 
   async updateProcessedFile(id: string, updates: Partial<ProcessedFile>): Promise<void> {
-    const files = await this.getProcessedFiles();
-    const index = files.findIndex((f) => f.id === id);
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.PROCESSED_FILES);
+    const allFiles: ProcessedFile[] = data ? JSON.parse(data) : [];
+    
+    const index = allFiles.findIndex((f) => f.id === id);
     if (index !== -1) {
-      files[index] = { ...files[index], ...updates };
-      await this.setProcessedFiles(files);
+      allFiles[index] = { ...allFiles[index], ...updates };
+      await AsyncStorage.setItem(STORAGE_KEYS.PROCESSED_FILES, JSON.stringify(allFiles));
     }
   },
 
-  async setLastSync(timestamp: string): Promise<void> {
+  async setLastSyncTime(timestamp: string): Promise<void> {
     await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, timestamp);
   },
 
-  async getLastSync(): Promise<string | null> {
+  async getLastSyncTime(): Promise<string | null> {
     return await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC);
   },
 

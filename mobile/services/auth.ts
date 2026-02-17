@@ -12,6 +12,7 @@ import {
   GOOGLE_AUTH_ENDPOINT,
   GOOGLE_TOKEN_ENDPOINT,
   GOOGLE_REVOKE_ENDPOINT,
+  API_BASE_URL,
 } from '../utils/constants';
 
 // Enable browser dismissal on iOS
@@ -199,9 +200,34 @@ class AuthService {
         }
       );
 
-      await appStorage.setUserInfo(response.data);
+      const profile = response.data;
+
+      // Persist locally for client-side usage
+      await appStorage.setUserInfo(profile);
+
+      // Best-effort sync of user profile to backend
+      try {
+        await axios.post(
+          `${API_BASE_URL}/user/sync`,
+          {
+            email: profile.email,
+            name: profile.name,
+            googleId: profile.id,
+            picture: profile.picture,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+          }
+        );
+      } catch (syncError) {
+        console.warn('Failed to sync user profile to backend:', syncError?.message || syncError);
+      }
+
       this.notify();
-      return response.data;
+      return profile;
     } catch (error) {
       console.error('Error fetching user info:', error);
       return null;

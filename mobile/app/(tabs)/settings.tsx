@@ -133,9 +133,12 @@ export default function SettingsScreen() {
                 )}
               </View>
               <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>
-                  {userInfo?.name || "Authorized User"}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.profileName}>
+                    {userInfo?.name || "Authorized User"}
+                  </Text>
+                  {isPro && <ProBadge size="small" />}
+                </View>
                 <Text style={styles.profileEmail}>
                   {userInfo?.email || "Connected account"}
                 </Text>
