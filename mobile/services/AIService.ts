@@ -81,7 +81,7 @@ class AIService {
    * Extract action items (To-Do list) - Returns structured JSON
    */
   async extractTodo(emailBody: string, onUpdate?: (tasks: any[]) => void, userName?: string): Promise<any[]> {
-    const fallback = [];
+    const fallback: any[] = [];
     
     try {
       const response = await api.post(`${API_BASE_URL}/todo`, {
@@ -122,6 +122,95 @@ class AIService {
     } catch (error) {
       console.error('Analysis error:', error);
       return null;
+    }
+  }
+
+  /**
+   * Progressive Email Analysis with Server-Sent Events
+   * Calls callbacks as each result arrives for faster perceived performance
+   */
+  async analyzeEmailProgressive(
+    data: { 
+      text: string; 
+      emailId: string; 
+      userId: string; 
+      userName?: string; 
+      tier?: 'free' | 'pro'; 
+      from?: string; 
+    },
+    callbacks: {
+      onProgress?: (step: number, total: number, message: string) => void;
+      onSummary?: (summary: string, confidence: number) => void;
+      onReplies?: (replies: string[]) => void;
+      onActionItems?: (items: any[]) => void;
+      onIntent?: (intent: any) => void;
+      onComplete?: (cached: boolean) => void;
+      onError?: (error: string) => void;
+    }
+  ): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyze-progressive`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.body) {
+        throw new Error('ReadableStream not supported');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              
+              switch (event.type) {
+                case 'progress':
+                  callbacks.onProgress?.(event.data.step, event.data.total, event.data.message);
+                  break;
+                case 'summary':
+                  callbacks.onSummary?.(event.data.text, event.data.confidence);
+                  break;
+                case 'replies':
+                  callbacks.onReplies?.(event.data);
+                  break;
+                case 'actionItems':
+                  callbacks.onActionItems?.(event.data);
+                  break;
+                case 'intent':
+                  callbacks.onIntent?.(event.data);
+                  break;
+                case 'complete':
+                  callbacks.onComplete?.(event.data.cached);
+                  break;
+                case 'error':
+                  callbacks.onError?.(event.data.message);
+                  break;
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Progressive analysis error:', error);
+      callbacks.onError?.('Failed to analyze email');
     }
   }
 }

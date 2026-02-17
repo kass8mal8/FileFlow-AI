@@ -243,8 +243,7 @@ export default function EmailDetailScreen() {
         await subscriptionService.incrementUsage("reply");
       };
 
-      // 5. Independent Parallel Execution for Perceived Speed
-      // 5. Unified AI Analysis with Persistence
+      // 5. Progressive AI Analysis for Faster Perceived Performance
       const performAnalysis = async () => {
         try {
           // Linkage can run in parallel
@@ -256,47 +255,55 @@ export default function EmailDetailScreen() {
               }
           })();
 
-          // Check quotas for fresh generation (gatekeeper)
-          // We only block if we know for sure we don't have it cached?
-          // The backend currently handles getOrCreate. 
-          // If we want to be strict, we check "summary" allowed.
-          const summaryQuota = await subscriptionService.canUseAI("summary");
-          
-          // If not allowed and no cache, backend might still return if logic allows, 
-          // but let's assume we proceed and let backend/subscription logic handle it later or here.
-          // For now, we proceed to `analyzeEmail` which handles "get or create".
-          
           const tier = subscriptionService.isPro() ? 'pro' : 'free';
           const fromEmail = type === "file" ? (content as ProcessedFile)?.emailFrom : (content as UnreadEmail)?.from;
 
-          const analysis = await aiService.analyzeEmail({
-            text: fullBody || "",
-            emailId: finalId, // Use finalId derived earlier
-            userId: cachedUserInfo?.email || "",
-            userName: userName,
-            tier: tier,
-            from: fromEmail
-          });
-
-          if (analysis) {
-            if (analysis.summary) setSummary(analysis.summary);
-            if (analysis.summaryConfidence) setSummaryConfidence(analysis.summaryConfidence);
-            
-            if (analysis.replies && Array.isArray(analysis.replies)) setReplies(analysis.replies);
-            
-            if (analysis.actionItems) setTodoList(analysis.actionItems);
-            if (analysis.todoConfidence) setTodoConfidence(analysis.todoConfidence);
-            
-            if (analysis.intent) setDetectedIntent(analysis.intent);
-
-            // Increment usage only if it was a FRESH generation (not cached)
-            if (!analysis.cached && !analysis.error) {
-                 await subscriptionService.incrementUsage("summary");
-                 if (analysis.replies?.length) await subscriptionService.incrementUsage("reply");
+          // Use progressive loading for faster perceived speed
+          await aiService.analyzeEmailProgressive(
+            {
+              text: fullBody || "",
+              emailId: finalId,
+              userId: cachedUserInfo?.email || "",
+              userName: userName,
+              tier: tier,
+              from: fromEmail
+            },
+            {
+              onProgress: (step, total, message) => {
+                console.log(`AI Progress: ${step}/${total} - ${message}`);
+              },
+              onSummary: (summaryText, confidence) => {
+                setSummary(summaryText);
+                setSummaryConfidence(confidence);
+                // Increment usage for summary (first result)
+                subscriptionService.incrementUsage("summary");
+              },
+              onReplies: (repliesData) => {
+                if (Array.isArray(repliesData)) {
+                  setReplies(repliesData);
+                  // Increment usage for replies
+                  if (repliesData.length > 0) {
+                    subscriptionService.incrementUsage("reply");
+                  }
+                }
+              },
+              onActionItems: (items) => {
+                setTodoList(items);
+              },
+              onIntent: (intentData) => {
+                setDetectedIntent(intentData.type);
+              },
+              onComplete: (cached) => {
+                console.log(`Analysis complete (cached: ${cached})`);
+                setAiLoading(false);
+              },
+              onError: (error) => {
+                console.error("Progressive analysis error:", error);
+                setSummary("An error occurred during analysis.");
+                setAiLoading(false);
+              }
             }
-          } else {
-             setSummary("Could not generate analysis. Please try again.");
-          }
+          );
 
           await linkagePromise;
 

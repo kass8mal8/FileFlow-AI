@@ -223,7 +223,8 @@ class AuthService {
           }
         );
       } catch (syncError) {
-        console.warn('Failed to sync user profile to backend:', syncError?.message || syncError);
+        console.warn('Failed to sync user profile to backend:', 
+          axios.isAxiosError(syncError) ? syncError.message : String(syncError));
       }
 
       this.notify();
