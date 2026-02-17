@@ -12,6 +12,7 @@ router.get('/models', aiController.getModels);
 
 // NEW: Comprehensive Analysis (uses EmailAnalysis model)
 router.post('/analyze', aiController.analyzeEmail);
+router.post('/analyze-progressive', aiController.analyzeEmailProgressive);
 
 // Feedback routes
 router.post('/feedback', feedbackController.submitFeedback);

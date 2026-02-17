@@ -48,17 +48,141 @@ class AIController {
           summaryConfidence: analysis.summary.confidence,
           replies: analysis.replies,
           actionItems: analysis.actionItems,
-          todoConfidence: analysis.todoConfidence || 0.8,
-          intent: analysis.intent,
-          cached: analysis.accessCount > 1
+          intent: analysis.intent.type,
+          intentConfidence: analysis.intent.confidence,
+          intentDetails: analysis.intent.details,
+          intentActions: analysis.intent.actions,
+          cached: analysis.accessCount > 1 // If accessed before, it was cached
         });
+      } else {
+        return res.status(500).json({ error: 'Failed to generate analysis' });
+      }
+    } catch (error) {
+      console.error('Email Analysis Error:', error);
+      res.status(500).json({ error: 'Failed to analyze email' });
+    }
+  }
+
+  /**
+   * NEW: Progressive Email Analysis with Server-Sent Events
+   * Streams results as they complete for faster perceived performance
+   */
+  async analyzeEmailProgressive(req, res) {
+    try {
+      const { text, emailId, userId, userName, tier, from } = req.body;
+      
+      if (!text || !emailId || !userId) {
+        return res.status(400).json({ error: 'text, emailId, and userId are required' });
       }
 
-      // Fallback if analysis creation failed
-      return res.status(500).json({ error: 'Failed to analyze email' });
+      // Set up SSE headers
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      const sendEvent = (type, data) => {
+        res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+      };
+
+      // Check cache first
+      const EmailAnalysis = require('../models/EmailAnalysis');
+      let analysis = await EmailAnalysis.findOne({ emailId, userId });
+      
+      if (analysis) {
+        // Send all cached data immediately
+        sendEvent('summary', { 
+          text: analysis.summary.text, 
+          confidence: analysis.summary.confidence 
+        });
+        sendEvent('replies', analysis.replies);
+        sendEvent('actionItems', analysis.actionItems);
+        sendEvent('intent', {
+          type: analysis.intent.type,
+          confidence: analysis.intent.confidence,
+          details: analysis.intent.details,
+          actions: analysis.intent.actions
+        });
+        sendEvent('complete', { cached: true });
+        
+        // Update access tracking
+        analysis.lastAccessed = new Date();
+        analysis.accessCount += 1;
+        await analysis.save();
+        
+        return res.end();
+      }
+
+      // Generate progressively
+      const replyCount = tier === 'pro' ? 3 : 1;
+      const isNoReply = from && from.toLowerCase().includes('noreply');
+      const summaryAgent = require('../agents/SummaryAgent');
+
+      // 1. Summary (fastest, ~2s)
+      sendEvent('progress', { step: 1, total: 4, message: 'Generating summary...' });
+      const summaryResult = await summaryAgent.execute(text, { tier })
+        .catch(() => ({ summary: 'Unable to generate summary', confidence: 0.5 }));
+      
+      let finalSummary = typeof summaryResult === 'string' ? summaryResult : (summaryResult.summary || 'Unable to generate summary');
+      if (isNoReply && !finalSummary.startsWith('[System Notice]')) {
+        finalSummary = `[System Notice] ${finalSummary}`;
+      }
+      
+      sendEvent('summary', { 
+        text: finalSummary, 
+        confidence: summaryResult.confidence || 0.85 
+      });
+
+      // 2. Replies (fast, ~3s)
+      sendEvent('progress', { step: 2, total: 4, message: 'Generating smart replies...' });
+      const replies = isNoReply ? [] : await aiService.generateSmartReplies(text, replyCount, userName || 'User', emailId, tier)
+        .catch(() => ['Thanks for reaching out!', 'Acknowledged, I\'m on it.', 'Will review and reply by EOD.']);
+      
+      sendEvent('replies', replies);
+
+      // 3. Action Items (medium, ~4s)
+      sendEvent('progress', { step: 3, total: 4, message: 'Extracting action items...' });
+      const actionItemsResult = isNoReply ? { tasks: [], confidence: 1 } : await aiService.extractActionItems(text, userName || 'User', tier, emailId)
+        .catch(() => ({ tasks: [], confidence: 0 }));
+      
+      sendEvent('actionItems', actionItemsResult.tasks || []);
+
+      // 4. Intent Detection (slowest, ~5s)
+      sendEvent('progress', { step: 4, total: 4, message: 'Detecting intent...' });
+      const intentResult = await aiService.detectIntent(text, emailId, tier)
+        .catch(() => ({ intent: 'INFO', confidence: 0, details: {}, actions: [] }));
+      
+      sendEvent('intent', {
+        type: intentResult.intent || 'INFO',
+        confidence: intentResult.confidence || 0,
+        details: intentResult.details || {},
+        actions: intentResult.actions || []
+      });
+
+      // Save to database for future requests
+      await EmailAnalysis.create({
+        emailId,
+        userId,
+        summary: {
+          text: finalSummary,
+          confidence: summaryResult.confidence || 0.85
+        },
+        replies: Array.isArray(replies) ? replies : [],
+        actionItems: actionItemsResult.tasks || [],
+        intent: {
+          type: intentResult.intent || 'INFO',
+          confidence: intentResult.confidence || 0,
+          details: intentResult.details || {},
+          actions: intentResult.actions || []
+        }
+      }).catch(e => console.error('Failed to save analysis:', e.message));
+
+      sendEvent('complete', { cached: false });
+      res.end();
     } catch (error) {
-      console.error('Analyze email error:', error);
-      res.status(500).json({ error: 'Analysis failed' });
+      console.error('Progressive Analysis Error:', error);
+      res.write(`data: ${JSON.stringify({ type: 'error', data: { message: error.message } })}\n\n`);
+      res.end();
     }
   }
 
