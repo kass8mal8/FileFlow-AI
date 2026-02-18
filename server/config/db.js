@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
     try {
-        const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/fileflow_ai';
+        const uri = process.env.MONGO_URI // 'mongodb://localhost:27017/fileflow_ai';
         console.log(`Connecting to MongoDB at: ${uri}`);
         
         await mongoose.connect(uri);
