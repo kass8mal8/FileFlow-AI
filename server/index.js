@@ -8,6 +8,7 @@ const connectDB = require('./config/db');
 const aiRoutes = require('./routes/aiRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const googleRoutes = require('./routes/googleRoutes');
+const { API_PORT } = process.env
 
 require('dotenv').config();
 
@@ -15,7 +16,7 @@ require('dotenv').config();
 connectDB();
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || API_PORT;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Basic Security Headers
