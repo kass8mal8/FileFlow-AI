@@ -19,28 +19,7 @@ const app = express();
 const port = process.env.PORT || API_PORT;
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Basic Security Headers
-app.use(helmet());
-
-// Performance: Compression
-app.use(compression());
-
-// Logging
-app.use(morgan(isProduction ? 'combined' : 'dev'));
-
-// Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after 15 minutes'
-});
-
-// Apply rate limiter to all routes
-app.use('/api/', limiter);
-
-// Middleware
+// 1. CORS Middleware (Must be very early)
 const corsOptions = {
   origin: isProduction 
     ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : false)
@@ -51,6 +30,28 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+
+// 2. Basic Security Headers
+app.use(helmet());
+
+// 3. Performance: Compression
+app.use(compression());
+
+// 4. Logging
+app.use(morgan(isProduction ? 'combined' : 'dev'));
+
+// 5. Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+
+// Apply rate limiter to all api routes
+app.use('/api/', limiter);
+
 app.use(express.json({ limit: '50mb' }));
 
 // Routes

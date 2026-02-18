@@ -145,7 +145,7 @@ export default function EmailDetailScreen() {
       }
 
       const response = await fetch(
-        "https://unpalatial-alfreda-trackable.ngrok-free.dev/api/chat",
+        `${API_BASE_URL}/chat`,
         {
           method: "POST",
           body: formData,
@@ -401,7 +401,7 @@ export default function EmailDetailScreen() {
         try {
           // We can assume we have body here
           const res = await fetch(
-            "https://unpalatial-alfreda-trackable.ngrok-free.dev/api/intent",
+            `${API_BASE_URL}/intent`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
