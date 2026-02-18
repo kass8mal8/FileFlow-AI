@@ -14,7 +14,14 @@ const app = express();
 const port = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors()); // Allow all for development simplicity, or be more specific in production
+const corsOptions = {
+  origin: '*', // For production, replace with specific domains
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'ngrok-skip-browser-warning'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' })); // Increased limit for attachments
 
 // Routes
@@ -22,6 +29,7 @@ app.use('/api', aiRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/google', googleRoutes);
 app.use('/api/user', require('./routes/userRoutes'));
+app.use('/api/todos', require('./routes/todoRoutes'));
 
 app.get('/', (req, res) => {
   res.send('FileFlow AI Server Running');

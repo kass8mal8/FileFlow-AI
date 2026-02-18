@@ -52,26 +52,28 @@ export const LIGHT_COLORS = {
 };
 
 export const DARK_COLORS = {
-  primary: '#f1f5f9', // Slate 100
-  primaryRGB: '241, 245, 249',
-  primaryLight: '#cbd5e1', // Slate 200
-  primaryDark: '#ffffff', 
+  primary: '#818cf8', // Indigo 400 - Much better visibility in dark mode
+  primaryRGB: '129, 140, 248',
+  primaryLight: '#a5b4fc', // Indigo 300
+  primaryDark: '#6366f1',  // Indigo 500
+  primaryContrast: '#ffffff',
   background: '#0f172a', // Slate 900
   surface: '#1e293b', // Slate 800
-  text: '#f1f5f9', // Slate 100
+  surfaceLight: '#334155', // Slate 700
+  text: '#f8fafc', // Slate 50
   textSecondary: '#94a3b8', // Slate 400
   textTertiary: '#64748b', // Slate 500
   border: '#334155', // Slate 700
-  success: '#10b981', // Emerald 500
-  warning: '#f59e0b', // Amber 500
-  error: '#ef4444', // Red 500
+  success: '#34d399', // Emerald 400
+  warning: '#fbbf24', // Amber 400
+  error: '#f87171', // Red 400
   white: '#ffffff',
   glass: 'rgba(30, 41, 59, 0.7)',
   glassBorder: 'rgba(255, 255, 255, 0.1)',
   gradientStart: '#0f172a',
   gradientEnd: '#1e293b',
-  aiAccent: '#8B5CF6',
-  aiAccentSecondary: '#3B82F6',
+  aiAccent: '#a78bfa', // Violet 400
+  aiAccentSecondary: '#60a5fa', // Blue 400
 };
 
 interface ThemeContextType {

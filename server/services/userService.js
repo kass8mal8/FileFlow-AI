@@ -67,7 +67,7 @@ class UserService {
       const user = await User.findOneAndUpdate(
         { email: email.toLowerCase() },
         { $set: update },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       return user;

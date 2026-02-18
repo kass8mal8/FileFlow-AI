@@ -19,7 +19,7 @@ class GeminiService {
 
     this.genAI = new GoogleGenerativeAI(apiKey);
 
-    // Default to the 2026 stable workhorse
+    // Use the latest flash preview as the primary workhorse
     this.modelName = "gemini-3-flash-preview";
     this.model = this.genAI.getGenerativeModel({
       model: this.modelName,
@@ -36,8 +36,8 @@ class GeminiService {
     const isProTier = tier === "pro";
     // Prefer higher-quality model for Pro tier, flash-first for others
     const modelsToTry = isProTier
-      ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-      : ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
+      ? ["gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+      : ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
 
     let lastError = null;
 
@@ -85,8 +85,8 @@ class GeminiService {
     const { tier, ...generationConfig } = config;
     const isProTier = tier === "pro";
     const modelsToTry = isProTier
-      ? ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-      : ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
+      ? ["gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+      : ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
 
     let lastError = null;
 

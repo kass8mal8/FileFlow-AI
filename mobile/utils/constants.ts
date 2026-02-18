@@ -42,6 +42,9 @@ export const STORAGE_KEYS = {
   THEME_PREFERENCE: 'fileflow_theme_preference',
   SUBSCRIPTION_STATE: 'fileflow_subscription_state',
   USAGE_QUOTA: 'fileflow_usage_quota',
+  CACHED_EMAILS: 'fileflow_cached_emails',
+  TODOS: 'fileflow_todos',
+  EXTRACTED_EMAILS: 'fileflow_extracted_emails',
 };
 
 // Dropbox Configuration

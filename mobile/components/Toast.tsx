@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
@@ -13,33 +13,45 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+// Static holder for non-hook usage
+export const toast = {
+  show: (message: string, type: ToastType = 'success') => {
+    console.warn('Toast not yet initialized');
+  }
+};
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toast, setToast] = useState<{ message: string, type: ToastType } | null>(null);
+  const [activeToast, setActiveToast] = useState<{ message: string, type: ToastType } | null>(null);
   const { colors, theme } = useTheme();
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<any>(null);
 
   const show = useCallback((message: string, type: ToastType = 'success') => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setToast({ message, type });
-    timerRef.current = setTimeout(() => setToast(null), 3000);
+    setActiveToast({ message, type });
+    timerRef.current = setTimeout(() => setActiveToast(null), 3000);
   }, []);
+
+  // Set static reference for non-component usage
+  useEffect(() => {
+    toast.show = show;
+  }, [show]);
 
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      {toast && (
+      {activeToast && (
         <Animated.View 
           entering={FadeInUp.springify().damping(15)} 
           exiting={FadeOutUp} 
           style={styles.toastWrapper}
         >
           <BlurView intensity={80} tint={theme === 'dark' ? 'dark' : 'light'} style={[styles.toastContainer, { borderColor: colors.border }]}>
-            <View style={[styles.iconContainer, { backgroundColor: toast.type === 'success' ? '#22c55e20' : toast.type === 'error' ? '#ef444420' : colors.primary + '20' }]}>
-              {toast.type === 'success' && <CheckCircle2 size={18} color="#22c55e" />}
-              {toast.type === 'error' && <AlertCircle size={18} color="#ef4444" />}
-              {toast.type === 'info' && <Info size={18} color={colors.primary} />}
+            <View style={[styles.iconContainer, { backgroundColor: activeToast.type === 'success' ? '#22c55e20' : activeToast.type === 'error' ? '#ef444420' : colors.primary + '20' }]}>
+              {activeToast.type === 'success' && <CheckCircle2 size={18} color="#22c55e" />}
+              {activeToast.type === 'error' && <AlertCircle size={18} color="#ef4444" />}
+              {activeToast.type === 'info' && <Info size={18} color={colors.primary} />}
             </View>
-            <Text style={[styles.toastText, { color: colors.text }]}>{toast.message}</Text>
+            <Text style={[styles.toastText, { color: colors.text }]}>{activeToast.message}</Text>
           </BlurView>
         </Animated.View>
       )}

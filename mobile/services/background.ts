@@ -159,6 +159,52 @@ class BackgroundService {
       }
       
       console.log(`Processed ${processedFiles.length} files`);
+      
+      // Pro Feature: Auto-extract todos from all unread emails (even without attachments)
+      const SubscriptionService = require('./SubscriptionService').default;
+      await SubscriptionService.initialize();
+      
+      if (SubscriptionService.isPro()) {
+        console.log('Pro User: Starting background todo extraction...');
+        const recentEmails = await gmailService.fetchRecentUnreadEmails();
+        const AIService = require('./AIService').default;
+        const NotificationService = require('./NotificationService').default;
+        
+        let newTodoCount = 0;
+        
+        for (const email of recentEmails) {
+          // Check if we've already tried to extract from this email recently
+          const alreadyExtracted = await appStorage.hasExtractedTodos(email.id);
+          if (alreadyExtracted) continue;
+
+          console.log(`Extracting todos from: ${email.subject}`);
+          const body = await gmailService.getMessageBody(email.id);
+          const tasks = await AIService.extractTodo(body, undefined, userInfo.userName);
+          
+          if (Array.isArray(tasks) && tasks.length > 0) {
+            for (const task of tasks) {
+              const taskText = typeof task === 'string' ? task : task.task;
+              if (taskText) {
+                await appStorage.addTodo({
+                  id: `auto-${email.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  text: taskText,
+                  sourceId: email.id,
+                  sourceTitle: email.subject || 'Email',
+                  completed: false,
+                  createdAt: new Date().toISOString()
+                });
+                newTodoCount++;
+              }
+            }
+          }
+          await appStorage.markAsExtracted(email.id);
+        }
+
+        if (newTodoCount > 0) {
+          await NotificationService.notifyNewTodos(newTodoCount);
+        }
+      }
+
       return processedFiles;
     } catch (error) {
       console.error('Error in processEmails:', error);

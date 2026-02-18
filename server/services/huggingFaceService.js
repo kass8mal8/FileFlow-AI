@@ -16,9 +16,9 @@ class HuggingFaceService {
 
     // Most stable 2026 Model IDs for Kenyan Infrastructure
     this.models = {
-      general: "meta-llama/Llama-3.1-8B-Instruct", // Highest availability in 2026
+      general: "meta-llama/Meta-Llama-3.1-8B-Instruct", // Fixed ID
       logic: "Qwen/Qwen2.5-7B-Instruct",
-      summary: "mistralai/Mistral-Nemo-Instruct-2407",
+      summary: "facebook/bart-large-cnn", // More stable specialized summary model
     };
   }
 

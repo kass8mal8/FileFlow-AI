@@ -55,7 +55,7 @@ export default function PaywallContent({ onSuccess, onClose, feature, isModal = 
 
     setLoading(true);
     setPaymentStatus('polling');
-    const amount = selectedPlan === 'annual' ? 1000 : 10;
+    const amount = selectedPlan === 'annual' ? 1000 : 100;
     
     try {
       const checkoutRequestId = await PaymentService.initiateSTKPush(phoneNumber, amount, email);
@@ -236,7 +236,7 @@ export default function PaywallContent({ onSuccess, onClose, feature, isModal = 
               ]}
             >
               <Text style={[styles.planName, { color: colors.text }]}>Monthly</Text>
-              <Text style={[styles.planPrice, { color: colors.text }]}>KES 10</Text>
+              <Text style={[styles.planPrice, { color: colors.text }]}>KES 100</Text>
               <Text style={[styles.planPeriod, { color: colors.textSecondary }]}>per month</Text>
             </TouchableOpacity>
           </View>

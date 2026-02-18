@@ -159,18 +159,22 @@ export default function SettingsScreen() {
               if (!isPro) {
                 router.push('/subscription');
               } else {
-                 // For testing/development: allow resetting subscription to Free
                  Alert.alert(
                   "Manage Subscription",
-                  "You are currently on the Pro plan.",
+                  "You are currently on the Pro plan. Would you like to cancel your subscription?",
                   [
-                    { text: "Cancel", style: "cancel" },
+                    { text: "Keep Pro", style: "cancel" },
                     { 
-                      text: "Reset to Free (Dev)", 
+                      text: "Cancel Subscription", 
                       style: "destructive",
                       onPress: async () => {
-                        await subscriptionService.updateTier('free' as any);
-                        await loadData();
+                        const success = await subscriptionService.cancelSubscription();
+                        if (success) {
+                          Alert.alert("Cancelled", "Your subscription has been cancelled. You are now on the Free plan.");
+                          await loadData();
+                        } else {
+                          Alert.alert("Error", "Failed to cancel subscription. Please try again later.");
+                        }
                       }
                     }
                   ]

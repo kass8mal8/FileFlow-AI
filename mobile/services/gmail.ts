@@ -2,6 +2,7 @@ import api from './api';
 import { EmailAttachment, UnreadEmail } from '../types';
 import { GMAIL_API_BASE, MAX_EMAILS_PER_SYNC } from '../utils/constants';
 import authService from './auth';
+import { appStorage } from '../utils/storage';
 
 // Cross-platform Base64 Helpers
 const base64Decode = (str: string) => {
@@ -196,6 +197,9 @@ class GmailService {
           isRead: false,
         });
       }
+
+      // Cache the results for fast access later
+      await appStorage.setCachedEmails(unreadEmails);
 
       return unreadEmails;
     } catch (error) {

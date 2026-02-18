@@ -109,10 +109,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="reports"
+        name="todos"
         options={{
-          title: 'Insights',
-          tabBarIcon: ({ color }) => <TabBarIcon name="chart-donut" color={color} />,
+          title: 'Todos',
+          tabBarIcon: ({ color }) => <TabBarIcon name="checkbox-marked-circle-outline" color={color} />,
         }}
       />
       <Tabs.Screen

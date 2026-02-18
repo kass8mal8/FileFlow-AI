@@ -76,3 +76,12 @@ export interface UnreadEmail {
   date: string;
   isRead: boolean;
 }
+
+export interface Todo {
+  id: string;
+  text: string;
+  sourceId: string;
+  sourceTitle: string;
+  completed: boolean;
+  createdAt: string;
+}

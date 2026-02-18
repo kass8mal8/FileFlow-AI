@@ -20,27 +20,21 @@ router.get('/status', async (req, res) => {
 
 // Sync user profile on authentication
 router.post('/sync', async (req, res) => {
+  // ... existing code ...
+});
+
+// Cancel Subscription
+router.post('/cancel-subscription', async (req, res) => {
   try {
-    const { email, name, googleId, picture } = req.body || {};
+    const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const user = await userService.getUserByEmail(email, {
-      name,
-      googleId,
-      picture,
-    });
-
-    // Return a minimal public representation
-    res.json({
-      email: user.email,
-      name: user.name,
-      subscription: user.subscription,
-      createdAt: user.createdAt,
-    });
+    await userService.updateSubscription(email, 'FREE', 'active');
+    res.json({ success: true, message: 'Subscription cancelled successfully' });
   } catch (error) {
-    console.error('Error syncing user profile:', error);
+    console.error('Error cancelling subscription:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

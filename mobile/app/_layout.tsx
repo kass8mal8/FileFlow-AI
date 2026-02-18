@@ -100,8 +100,15 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const { theme } = useColorScheme();
 
+  useEffect(() => {
+    // Request notification permissions on mount
+    const NotificationService = require('@/services/NotificationService').default;
+    NotificationService.requestPermissions();
+  }, []);
+
   return (
     <NavigationThemeProvider value={theme === "dark" ? DarkTheme : DefaultTheme}>
+
       <ToastProvider>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

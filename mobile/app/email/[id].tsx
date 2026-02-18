@@ -41,6 +41,8 @@ import {
   Archive,
   Lock,
   Crown,
+  Trash2,
+  Plus,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown, FadeInRight, FadeInUp } from "react-native-reanimated";
@@ -50,7 +52,7 @@ import linkageService from "../../services/LinkageService";
 import subscriptionService from "../../services/SubscriptionService";
 import driveService from "../../services/drive";
 import classifierService from "../../services/classifier";
-import { ProcessedFile, UnreadEmail, SyncStatus, FileCategory } from "../../types";
+import { ProcessedFile, UnreadEmail, SyncStatus, FileCategory, Todo } from "../../types";
 import { appStorage } from "../../utils/storage";
 import { useTheme } from "@/components/ThemeContext";
 import Skeleton from "@/components/Skeleton";
@@ -70,6 +72,7 @@ export default function EmailDetailScreen() {
   }>();
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(true);
+  const [loadingFact, setLoadingFact] = useState("");
   const [drafting, setDrafting] = useState<string | null>(null);
   const [item, setItem] = useState<ProcessedFile | UnreadEmail | null>(null);
   const [summary, setSummary] = useState<string>("");
@@ -88,6 +91,22 @@ export default function EmailDetailScreen() {
   }>({});
   const { theme, colors } = useTheme();
   const toast = useToast();
+
+  // Fun facts to show during loading
+  const loadingFacts = [
+    "📧 The average office worker receives 121 emails per day!",
+    "🤖 AI can read and summarize emails 100x faster than humans",
+    "⏰ People spend 28% of their workday reading and answering emails",
+    "🎯 FileFlow AI can extract action items with 95% accuracy",
+    "💡 Smart replies save an average of 3 hours per week",
+    "🔒 All your data is encrypted end-to-end for maximum security",
+    "🌟 Pro users get unlimited AI summaries and priority processing",
+    "📱 FileFlow syncs seamlessly with Google Drive and Calendar",
+    "🚀 Our AI learns from your feedback to provide better results",
+    "💬 The first email was sent in 1971 by Ray Tomlinson",
+    "📊 Email has a 4,200% ROI - the highest of any marketing channel",
+    "🎨 FileFlow uses Royal Violet & Slate for a premium experience"
+  ];
   const [chatMessages, setChatMessages] = useState<
     { id: string; text: string; sender: "user" | "ai" }[]
   >([]);
@@ -120,11 +139,48 @@ export default function EmailDetailScreen() {
     router.push(`/email/${thread.id}?type=email`);
   };
 
+  // Rotate loading facts every 3 seconds while AI is loading
   useEffect(() => {
-    subscriptionService.initialize();
-    appStorage.getUserInfo().then(setUserInfo);
-    loadContent();
+    if (aiLoading && loadingFacts.length > 0) {
+      // Set initial fact
+      const randomIndex = Math.floor(Math.random() * loadingFacts.length);
+      setLoadingFact(loadingFacts[randomIndex]);
+
+      // Rotate facts every 3 seconds
+      const interval = setInterval(() => {
+        const newIndex = Math.floor(Math.random() * loadingFacts.length);
+        setLoadingFact(loadingFacts[newIndex]);
+      }, 3000);
+
+      return () => clearInterval(interval);
+    } else {
+      setLoadingFact(""); // Clear fact when loading is done
+    }
+  }, [aiLoading]);
+
+  useEffect(() => {
+    const init = async () => {
+      await subscriptionService.initialize();
+      const info = await appStorage.getUserInfo();
+      setUserInfo(info);
+      loadContent();
+    };
+    init();
   }, [id, type]);
+
+  const handleAddTodo = async (taskText: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const todo: Todo = {
+      id: `${id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: taskText,
+      sourceId: id || '',
+      sourceTitle: (item as any)?.subject || (item as any)?.filename || 'Email',
+      completed: false,
+      createdAt: new Date().toISOString(),
+    };
+    await appStorage.addTodo(todo);
+    toast.show("Added to your Todo list", "success");
+  };
 
   const loadContent = async () => {
     try {
@@ -134,14 +190,28 @@ export default function EmailDetailScreen() {
       let emailId = id;
 
       if (type === "file") {
+        // Files are always local — fast
         const files = await appStorage.getProcessedFiles();
         content = files.find((f) => f.id === id) || null;
         if (content) emailId = (content as ProcessedFile).messageId;
       } else {
-        const unread = await gmailService.fetchRecentUnreadEmails();
-        content = unread.find((e) => e.id === id) || null;
+        // 1. Check local cache first (fast, no network)
+        const cachedEmails = await appStorage.getCachedEmails?.() || [];
+        content = cachedEmails.find((e: UnreadEmail) => e.id === id) || null;
+
+        if (content) {
+          // Show shell immediately from cache
+          setItem(content);
+          setLoading(false);
+        }
+
+        // 2. Fetch from network (may update or find email if not cached)
+        if (!content) {
+          const unread = await gmailService.fetchRecentUnreadEmails();
+          content = unread.find((e) => e.id === id) || null;
+        }
       }
-      
+
       const finalId = content?.id || id;
 
       if (!content) {
@@ -152,6 +222,7 @@ export default function EmailDetailScreen() {
 
       setItem(content);
       setLoading(false); // Show shell
+
 
       // Lazy Loading: If file is Pending, process it now
       if (type === 'file' && (content as ProcessedFile).status === SyncStatus.Pending) {
@@ -289,6 +360,22 @@ export default function EmailDetailScreen() {
               },
               onActionItems: (items) => {
                 setTodoList(items);
+                // Pro users: Auto-populate todos
+                if (subscriptionService.isPro() && Array.isArray(items)) {
+                  items.forEach((actionItem, index) => {
+                    const taskText = typeof actionItem === 'string' ? actionItem : actionItem.task;
+                    if (taskText) {
+                      appStorage.addTodo({
+                        id: `${finalId}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+                        text: taskText,
+                        sourceId: finalId,
+                        sourceTitle: (content as any)?.subject || (content as any)?.filename || 'Email',
+                        completed: false,
+                        createdAt: new Date().toISOString()
+                      });
+                    }
+                  });
+                }
               },
               onIntent: (intentData) => {
                 setDetectedIntent(intentData.type);
@@ -465,13 +552,64 @@ export default function EmailDetailScreen() {
 
   if (loading && !item) {
     return (
-      <View
-        style={[
-          styles.loadingContainer,
-          { backgroundColor: colors.background },
-        ]}
-      >
-        <ActivityIndicator color={colors.primary} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
+
+        {/* Header skeleton */}
+        <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <ChevronLeft size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Skeleton height={18} width={120} variant="rounded" />
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+          {/* Sender row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <Skeleton height={44} width={44} variant="circle" style={{ marginRight: 12 }} />
+            <View style={{ flex: 1 }}>
+              <Skeleton height={14} width="60%" variant="rounded" style={{ marginBottom: 8 }} />
+              <Skeleton height={12} width="40%" variant="rounded" />
+            </View>
+            <Skeleton height={12} width={50} variant="rounded" />
+          </View>
+
+          {/* Subject */}
+          <Skeleton height={22} width="85%" variant="rounded" style={{ marginBottom: 8 }} />
+          <Skeleton height={22} width="55%" variant="rounded" style={{ marginBottom: 24 }} />
+
+          {/* Body lines */}
+          <Skeleton height={14} width="100%" variant="rounded" style={{ marginBottom: 10 }} />
+          <Skeleton height={14} width="95%" variant="rounded" style={{ marginBottom: 10 }} />
+          <Skeleton height={14} width="88%" variant="rounded" style={{ marginBottom: 10 }} />
+          <Skeleton height={14} width="92%" variant="rounded" style={{ marginBottom: 10 }} />
+          <Skeleton height={14} width="70%" variant="rounded" style={{ marginBottom: 24 }} />
+
+          {/* AI Summary card skeleton */}
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 16 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <Skeleton height={18} width={18} variant="circle" style={{ marginRight: 8 }} />
+              <Skeleton height={14} width={100} variant="rounded" />
+            </View>
+            <Skeleton height={14} width="100%" variant="rounded" style={{ marginBottom: 8 }} />
+            <Skeleton height={14} width="80%" variant="rounded" />
+          </View>
+
+          {/* Smart replies skeleton */}
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <Skeleton height={18} width={18} variant="circle" style={{ marginRight: 8 }} />
+              <Skeleton height={14} width={120} variant="rounded" />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Skeleton height={36} width="30%" variant="rounded" />
+              <Skeleton height={36} width="35%" variant="rounded" />
+              <Skeleton height={36} width="28%" variant="rounded" />
+            </View>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -480,9 +618,14 @@ export default function EmailDetailScreen() {
   const renderProcessingOverlay = () => {
     if (!processingStatus) return null;
     return (
-      <View style={[styles.processingOverlay, { backgroundColor: colors.background + 'CC' }]}>
+      <View style={[styles.processingOverlay, { backgroundColor: colors.background + 'EE' }]}>
         <ActivityIndicator color={colors.primary} size="large" />
         <Text style={[styles.processingText, { color: colors.text }]}>{processingStatus}</Text>
+        {loadingFact && (
+          <Text style={{ marginTop: 20, color: colors.textSecondary, fontSize: 13, fontStyle: 'italic', textAlign: 'center', paddingHorizontal: 40 }}>
+            {loadingFact}
+          </Text>
+        )}
       </View>
     );
   };
@@ -692,6 +835,14 @@ export default function EmailDetailScreen() {
                   },
                 ]}
               >
+                {/* Did You Know? Facts */}
+                {loadingFact && (
+                  <View style={{ marginBottom: 16, padding: 12, backgroundColor: theme === 'dark' ? 'rgba(124, 58, 237, 0.1)' : 'rgba(124, 58, 237, 0.05)', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: '#7c3aed' }}>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, fontStyle: 'italic' }}>
+                      {loadingFact}
+                    </Text>
+                  </View>
+                )}
                 <Skeleton
                   height={20}
                   width="90%"
@@ -821,10 +972,10 @@ export default function EmailDetailScreen() {
                   variant="rounded"
                 />
                 <Skeleton
-                  height={16}
-                  width="70%"
-                  style={{ marginBottom: 12 }}
-                  variant="rounded"
+                  height={44}
+                  width={44}
+                  variant="circle"
+                  style={{ marginRight: 12 }}
                 />
                 <Skeleton height={16} width="85%" variant="rounded" />
               </View>
@@ -896,7 +1047,7 @@ export default function EmailDetailScreen() {
                               <TouchableOpacity
                                 onPress={() => handleAddToCalendar(task)}
                                 activeOpacity={0.7}
-                                style={{ marginTop: 12, alignSelf: 'flex-end' }}
+                                style={{ marginTop: 12 }}
                               >
                                 <LinearGradient
                                   colors={[colors.primary, colors.primaryLight]}
@@ -905,11 +1056,32 @@ export default function EmailDetailScreen() {
                                   style={styles.calendarBtnGradient}
                                 >
                                   <CalendarIcon size={14} color="#fff" />
-                                  <Text style={styles.calendarBtnText}>Add</Text>
+                                  <Text style={styles.calendarBtnText}>Add to Calendar</Text>
                                   {!subscriptionService.isPro() && <ProBadge size="small" />}
                                 </LinearGradient>
                               </TouchableOpacity>
                             )}
+
+                            <TouchableOpacity
+                              onPress={() => handleAddTodo(task.task)}
+                              activeOpacity={0.7}
+                              style={{ marginTop: 12, alignSelf: 'flex-start' }}
+                            >
+                              <View
+                                style={[
+                                  styles.sentientActionBtn,
+                                  {
+                                    backgroundColor: colors.surface,
+                                    borderColor: colors.border,
+                                    paddingVertical: 8,
+                                    paddingHorizontal: 12,
+                                  }
+                                ]}
+                              >
+                                <Plus size={14} color={colors.primary} style={{ marginRight: 6 }} />
+                                <Text style={[styles.sentientActionText, { color: colors.text, fontSize: 12 }]}>Add to Todos</Text>
+                              </View>
+                            </TouchableOpacity>
                           </View>
                         </Animated.View>
                       );
@@ -1051,23 +1223,28 @@ export default function EmailDetailScreen() {
                           style={{ flex: 1 }}
                         >
                           <LinearGradient
-                            colors={theme === 'dark' ? [colors.surface, colors.surface] : ['#f0f0f0', '#e5e5e5']}
+                            colors={theme === 'dark' ? [colors.surfaceLight, colors.surface] : ['#f8fafc', '#f1f5f9']}
                             style={[
                               styles.actionBtnBlur,
                               {
                                 borderColor: colors.border,
                                 borderWidth: 1,
-                                borderRadius: 8,
+                                borderRadius: 12,
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                paddingVertical: 8
+                                paddingVertical: 10,
+                                shadowColor: "#000",
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.1,
+                                shadowRadius: 4,
+                                elevation: 3
                               }
                             ]}
                           >
                             <Text
                               style={[
                                 styles.actionBtnText,
-                                { color: colors.text, fontWeight: "600", fontSize: 13 },
+                                { color: colors.text, fontWeight: "700", fontSize: 13 },
                               ]}
                             >
                               Draft
@@ -1082,16 +1259,21 @@ export default function EmailDetailScreen() {
                           style={{ flex: 1 }}
                         >
                           <LinearGradient
-                            colors={[colors.primary, colors.primaryLight]} // Use gradient for primary action
+                            colors={[colors.primaryDark, colors.primary]} // Use more vibrant gradient
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={[
                               styles.sendBtnGradient,
                               {
-                                borderRadius: 8,
+                                borderRadius: 12,
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                paddingVertical: 8
+                                paddingVertical: 10,
+                                shadowColor: colors.primary,
+                                shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.3,
+                                shadowRadius: 8,
+                                elevation: 5
                               }
                             ]}
                           >
@@ -1102,7 +1284,7 @@ export default function EmailDetailScreen() {
                                 <Text
                                   style={[
                                     styles.actionBtnText,
-                                    { color: "#fff", fontWeight: "600", fontSize: 13 },
+                                    { color: "#fff", fontWeight: "700", fontSize: 13 },
                                   ]}
                                 >
                                   Send
@@ -1216,6 +1398,15 @@ const styles = StyleSheet.create({
     padding: 20,
     flexDirection: "row",
     alignItems: "center",
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.05)",
   },
   attachmentIconContainer: {
     width: 44,

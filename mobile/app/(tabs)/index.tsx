@@ -43,6 +43,7 @@ import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import { triggerHaptic } from "@/utils/haptics";
+import { LinearGradient } from "expo-linear-gradient";
 
 const Logo = require("@/assets/images/logo.png");
 
@@ -622,19 +623,32 @@ export default function DashboardScreen() {
                 <TouchableOpacity
                   onPress={handleManualSync}
                   disabled={isSyncing}
-                  style={[
-                    styles.emptyActionButton,
-                    { backgroundColor: colors.primary },
-                  ]}
+                  style={{ alignSelf: 'center' }}
                 >
-                  {isSyncing ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <RefreshCw size={18} color="#fff" />
-                      <Text style={styles.emptyActionText}>Sync Now</Text>
-                    </>
-                  )}
+                  <LinearGradient
+                    colors={[colors.primaryDark, colors.primary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[
+                      styles.emptyActionButton,
+                      {
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 8,
+                        elevation: 5
+                      }
+                    ]}
+                  >
+                    {isSyncing ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <RefreshCw size={18} color="#fff" />
+                        <Text style={styles.emptyActionText}>Sync Now</Text>
+                      </>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>

@@ -52,7 +52,8 @@ class UnifiedAIService {
       const result = await generatorFn();
 
       // 3. Save to Cache (Fire & Forget)
-      if (result) {
+      const isUnavailable = typeof result === 'string' && result.includes("unavailable");
+      if (result && !isUnavailable && result !== "Personal") {
         AICache.create({
           resourceId, 
           type, 

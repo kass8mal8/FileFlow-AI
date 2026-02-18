@@ -195,6 +195,34 @@ class SubscriptionService {
   }
 
   /**
+   * Cancel subscription
+   */
+  async cancelSubscription(): Promise<boolean> {
+    try {
+      const userInfo = await appStorage.getUserInfo();
+      if (!userInfo?.email) return false;
+
+      const response = await fetch(`${API_BASE_URL}/user/cancel-subscription`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({ email: userInfo.email })
+      });
+
+      if (response.ok) {
+        await this.updateTier(SubscriptionTier.FREE);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Failed to cancel subscription:", error);
+      return false;
+    }
+  }
+
+  /**
    * Get usage statistics
    */
   getUsageStats(): UsageQuota | null {

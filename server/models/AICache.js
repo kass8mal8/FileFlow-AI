@@ -14,7 +14,7 @@ const AICacheSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['SUMMARY', 'REPLIES', 'TODO', 'INTENT', 'CLASSIFICATION', 'CHAT'],
+    enum: ['SUMMARY', 'REPLIES', 'TODO', 'INTENT', 'CLASSIFICATION', 'CHAT', 'USER_REPLY'],
     index: true
   },
   result: {

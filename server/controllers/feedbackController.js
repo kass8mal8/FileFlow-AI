@@ -24,7 +24,7 @@ class FeedbackController {
           confidence,
           updatedAt: new Date()
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       console.log(`📊 Feedback recorded: ${feedbackType} - ${rating} by ${userId}`);

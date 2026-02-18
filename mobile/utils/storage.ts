@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { STORAGE_KEYS } from './constants';
-import { AuthTokens, ProcessedFile } from '../types';
+import { AuthTokens, ProcessedFile, UnreadEmail, Todo } from '../types';
 import { SubscriptionState, UsageQuota } from '../types/subscription';
 
 /**
@@ -190,6 +190,15 @@ export const appStorage = {
     await AsyncStorage.setItem(STORAGE_KEYS.USAGE_QUOTA, JSON.stringify(quota));
   },
 
+  async getCachedEmails(): Promise<UnreadEmail[]> {
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.CACHED_EMAILS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  async setCachedEmails(emails: UnreadEmail[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.CACHED_EMAILS, JSON.stringify(emails));
+  },
+
   async clearAll(): Promise<void> {
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.USER_INFO,
@@ -198,6 +207,104 @@ export const appStorage = {
       STORAGE_KEYS.SYNC_PERIOD,
       STORAGE_KEYS.HISTORY_ID,
       STORAGE_KEYS.THEME_PREFERENCE,
+      STORAGE_KEYS.CACHED_EMAILS,
+      STORAGE_KEYS.TODOS,
     ]);
+  },
+
+  /**
+   * Todos
+   */
+  async getTodos(): Promise<Todo[]> {
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.TODOS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  async setTodos(todos: Todo[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.TODOS, JSON.stringify(todos));
+  },
+
+  async addTodo(todo: Todo): Promise<void> {
+    const todos = await this.getTodos();
+    
+    // Normalize for comparison
+    const normalizedText = todo.text.trim().toLowerCase();
+    const sourceId = todo.sourceId;
+
+    // Avoid duplicates based on text AND sourceId
+    const isDuplicate = todos.some(t => 
+      (t.id === todo.id) || 
+      (t.text.trim().toLowerCase() === normalizedText && t.sourceId === sourceId)
+    );
+
+    if (isDuplicate) {
+      console.log('Skipping duplicate todo:', normalizedText);
+      return;
+    }
+
+    todos.unshift(todo);
+    await this.setTodos(todos);
+    
+    // Sync to server
+    const userInfo = await this.getUserInfo();
+    if (userInfo?.email) {
+      const TodoService = require('../services/TodoService').default;
+      TodoService.syncTodo(userInfo.email, todo).catch(console.error);
+    }
+  },
+
+  async toggleTodo(id: string): Promise<void> {
+    const todos = await this.getTodos();
+    const index = todos.findIndex(t => t.id === id);
+    if (index !== -1) {
+      todos[index].completed = !todos[index].completed;
+      await this.setTodos(todos);
+      
+      // Sync to server
+      const userInfo = await this.getUserInfo();
+      if (userInfo?.email) {
+        const TodoService = require('../services/TodoService').default;
+        TodoService.toggleTodo(userInfo.email, todos[index]).catch(console.error);
+      }
+    }
+  },
+
+  async deleteTodo(id: string): Promise<void> {
+    const todos = await this.getTodos();
+    const todoToDelete = todos.find(t => t.id === id);
+    const filtered = todos.filter(t => t.id !== id);
+    await this.setTodos(filtered);
+
+    // Sync to server
+    if (todoToDelete) {
+      const userInfo = await this.getUserInfo();
+      if (userInfo?.email) {
+        const TodoService = require('../services/TodoService').default;
+        TodoService.deleteTodo(userInfo.email, todoToDelete).catch(console.error);
+      }
+    }
+  },
+
+  /**
+   * Extraction Tracking (to prevent duplicate AI work)
+   */
+  async getExtractedEmailIds(): Promise<string[]> {
+    const data = await AsyncStorage.getItem(STORAGE_KEYS.EXTRACTED_EMAILS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  async hasExtractedTodos(emailId: string): Promise<boolean> {
+    const ids = await this.getExtractedEmailIds();
+    return ids.includes(emailId);
+  },
+
+  async markAsExtracted(emailId: string): Promise<void> {
+    const ids = await this.getExtractedEmailIds();
+    if (!ids.includes(emailId)) {
+      ids.push(emailId);
+      // Keep only last 1000 to prevent infinite growth
+      const limited = ids.slice(-1000);
+      await AsyncStorage.setItem(STORAGE_KEYS.EXTRACTED_EMAILS, JSON.stringify(limited));
+    }
   },
 };
