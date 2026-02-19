@@ -95,62 +95,82 @@ class BackgroundService {
       }
 
       // Step: Filter non-existent emails (interpret "filter the ones that don't exist in gmail")
-      console.log('Cleaning up ghost files...');
+      // Optimization: Only cleanup ghost files occasionally (e.g. once every 24h) to save API calls
+      console.log('Checking for ghost files cleanup...');
       const storedFiles = await appStorage.getProcessedFiles();
-      const validFiles: ProcessedFile[] = [];
       const userInfo = await appStorage.getUserInfo();
+      const lastCleanup = await appStorage.getLastCleanupTime();
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       
-      for (const file of storedFiles) {
-        try {
-          // Check if message still exists in Gmail
-          await gmailService.getMessageDetails(file.messageId, await authService.getValidAccessToken() || '');
-          validFiles.push(file);
-        } catch (error) {
-          console.log(`File ${file.filename} (Message ${file.messageId}) no longer exists in Gmail, removing.`);
+      let validFiles: ProcessedFile[] = [...storedFiles];
+      
+      if (!lastCleanup || new Date(lastCleanup) < oneDayAgo) {
+        console.log('Performing periodic ghost files cleanup...');
+        const newValidFiles: ProcessedFile[] = [];
+        const accessToken = await authService.getValidAccessToken() || '';
+        
+        // Chunk processing to avoid hitting rate limits even during cleanup
+        for (let i = 0; i < storedFiles.length; i += 5) {
+          const chunk = storedFiles.slice(i, i + 5);
+          await Promise.all(chunk.map(async (file) => {
+            try {
+              await gmailService.getMessageDetails(file.messageId, accessToken);
+              newValidFiles.push(file);
+            } catch (error) {
+              console.log(`File ${file.filename} no longer exists in Gmail, removing.`);
+            }
+          }));
         }
-      }
-      
-      if (validFiles.length !== storedFiles.length) {
-        await appStorage.setProcessedFiles(validFiles);
+        
+        validFiles = newValidFiles;
+        await appStorage.setLastCleanupTime(now.toISOString());
+        
+        if (validFiles.length !== storedFiles.length) {
+          await appStorage.setProcessedFiles(validFiles);
+        }
+      } else {
+        console.log('Skipping ghost file cleanup (recently performed)');
       }
 
       console.log(`Found ${attachments.length} attachments to process`);
 
-      // Eager processing: Process all new attachments in PARALLEL to speed up syncing
-      const syncPromises = attachments.map(async (attachment) => {
-        try {
-          // Skip if already exists in storage
-          const alreadyProcessed = validFiles.some(f => f.messageId === attachment.messageId && f.filename === attachment.filename);
-          if (alreadyProcessed) return;
+      // Eager processing: Process new attachments in SMALL CHUNKS to avoid hitting rate limits
+      for (let i = 0; i < attachments.length; i += 3) {
+        const chunk = attachments.slice(i, i + 3);
+        await Promise.all(chunk.map(async (attachment) => {
+          try {
+            // Skip if already exists in storage
+            const alreadyProcessed = validFiles.some(f => f.messageId === attachment.messageId && f.filename === attachment.filename);
+            if (alreadyProcessed) return;
 
-          console.log(`Processing ${attachment.filename}...`);
-          const processedFile = await this.processAttachment(attachment, userInfo.email);
-          processedFiles.push(processedFile);
-          await appStorage.addProcessedFile(processedFile);
-        } catch (error) {
-          console.error(`Error processing ${attachment.filename}:`, error);
-           // Fallback: create pending entry
-           const pendingFile: ProcessedFile = {
-            id: `${Date.now()}-${attachment.filename}`,
-            userEmail: userInfo.email,
-            messageId: attachment.messageId,
-            filename: attachment.filename,
-            emailFrom: attachment.emailFrom,
-            emailSubject: attachment.emailSubject,
-            threadId: attachment.threadId,
-            attachmentId: attachment.attachmentId,
-            category: 'Personal' as any,
-            status: SyncStatus.Pending,
-            uploadedAt: new Date().toISOString(),
-            emailDate: attachment.emailDate,
-            size: attachment.size,
-            mimeType: attachment.mimeType,
-          };
-          await appStorage.addProcessedFile(pendingFile);
-        }
-      });
-
-      await Promise.all(syncPromises);
+            console.log(`Processing ${attachment.filename}...`);
+            const processedFile = await this.processAttachment(attachment, userInfo.email);
+            processedFiles.push(processedFile);
+            await appStorage.addProcessedFile(processedFile);
+          } catch (error) {
+            console.error(`Error processing ${attachment.filename}:`, error);
+             // Fallback: create pending entry
+             const pendingFile: ProcessedFile = {
+              id: `${Date.now()}-${attachment.filename}`,
+              userEmail: userInfo.email,
+              messageId: attachment.messageId,
+              filename: attachment.filename,
+              emailFrom: attachment.emailFrom,
+              emailSubject: attachment.emailSubject,
+              threadId: attachment.threadId,
+              attachmentId: attachment.attachmentId,
+              category: 'Personal' as any,
+              status: SyncStatus.Pending,
+              uploadedAt: new Date().toISOString(),
+              emailDate: attachment.emailDate,
+              size: attachment.size,
+              mimeType: attachment.mimeType,
+            };
+            await appStorage.addProcessedFile(pendingFile);
+          }
+        }));
+      }
 
       // Update state for next incremental sync
       await appStorage.setLastSyncTime(new Date().toISOString());

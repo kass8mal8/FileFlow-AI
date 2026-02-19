@@ -142,6 +142,14 @@ export const appStorage = {
     return await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC);
   },
 
+  async setLastCleanupTime(timestamp: string): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.LAST_CLEANUP, timestamp);
+  },
+
+  async getLastCleanupTime(): Promise<string | null> {
+    return await AsyncStorage.getItem(STORAGE_KEYS.LAST_CLEANUP);
+  },
+
   async getSyncPeriod(): Promise<string> {
     return (await AsyncStorage.getItem(STORAGE_KEYS.SYNC_PERIOD)) || '30d';
   },
@@ -209,6 +217,7 @@ export const appStorage = {
       STORAGE_KEYS.THEME_PREFERENCE,
       STORAGE_KEYS.CACHED_EMAILS,
       STORAGE_KEYS.TODOS,
+      STORAGE_KEYS.LAST_CLEANUP,
     ]);
   },
 

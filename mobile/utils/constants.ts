@@ -45,6 +45,7 @@ export const STORAGE_KEYS = {
   CACHED_EMAILS: 'fileflow_cached_emails',
   TODOS: 'fileflow_todos',
   EXTRACTED_EMAILS: 'fileflow_extracted_emails',
+  LAST_CLEANUP: 'fileflow_last_cleanup',
 };
 
 // Dropbox Configuration

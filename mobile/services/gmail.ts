@@ -163,8 +163,13 @@ class GmailService {
   /**
    * Fetch recent unread emails (even without attachments) for AI summary/replies
    */
-  async fetchRecentUnreadEmails(): Promise<UnreadEmail[]> {
+  async fetchRecentUnreadEmails(skipCache: boolean = false): Promise<UnreadEmail[]> {
     try {
+      if (!skipCache) {
+        const cached = await appStorage.getCachedEmails();
+        if (cached && cached.length > 0) return cached;
+      }
+
       const accessToken = await authService.getValidAccessToken();
       if (!accessToken) throw new Error('No valid access token');
 

@@ -30,7 +30,9 @@
       },
       "package": "com.fileflow.ai",
       "permissions": [
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
       ]
     },
     "web": {
@@ -40,6 +42,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-updates",
       [
         "expo-calendar",
         {
@@ -51,6 +54,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "841d41cb-e8c4-41c2-850e-08c144063e83"
+      }
     }
   }
 }

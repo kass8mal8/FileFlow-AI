@@ -25,13 +25,18 @@ class LinkageService {
         file.emailFrom?.toLowerCase().includes(fromEmail.toLowerCase())
       );
 
-      // 3. Fetch real email threads from Gmail
+      // 3. Fetch real email threads from Gmail (Pre-filter from cache if possible)
       let relatedThreads: RelatedThread[] = [];
       try {
-        const allEmails = await gmailService.fetchRecentUnreadEmails();
+        // Optimization: Try to use cached emails first to avoid hitting rate limits
+        let allEmails = await appStorage.getCachedEmails();
+        
+        if (!allEmails || allEmails.length === 0) {
+          allEmails = await gmailService.fetchRecentUnreadEmails();
+        }
         
         // Filter emails from the same sender, excluding current email
-        relatedThreads = allEmails
+        relatedThreads = (allEmails || [])
           .filter(email => 
             email.from.toLowerCase().includes(fromEmail.toLowerCase()) && 
             email.id !== currentEmailId

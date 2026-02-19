@@ -16,6 +16,7 @@ require('dotenv').config();
 connectDB();
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || API_PORT;
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -43,7 +44,7 @@ app.use(morgan(isProduction ? 'combined' : 'dev'));
 // 5. Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 1000, // Limit each IP to 1000 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests from this IP, please try again after 15 minutes'
