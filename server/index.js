@@ -21,10 +21,20 @@ const port = process.env.PORT || API_PORT;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // 1. CORS Middleware (Must be very early)
+const allowedOrigins = isProduction 
+  ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
+  : ['http://localhost:8081', 'http://localhost:19006', 'http://localhost:19000'];
+
 const corsOptions = {
-  origin: isProduction 
-    ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : false)
-    : '*',
+  origin: (origin, callback) => {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || !isProduction) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'ngrok-skip-browser-warning'],
   credentials: true,

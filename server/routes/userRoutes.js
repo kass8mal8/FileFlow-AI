@@ -20,7 +20,28 @@ router.get('/status', async (req, res) => {
 
 // Sync user profile on authentication
 router.post('/sync', async (req, res) => {
-  // ... existing code ...
+  try {
+    const { email, name, googleId, picture } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const profile = { name, googleId, picture };
+    const user = await userService.getUserByEmail(email, profile);
+    
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        name: user.name,
+        subscription: user.subscription
+      }
+    });
+  } catch (error) {
+    console.error('Error syncing user:', error);
+    res.status(500).json({ error: 'Failed to sync user profile' });
+  }
 });
 
 // Cancel Subscription
