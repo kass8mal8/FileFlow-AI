@@ -75,6 +75,7 @@ export interface UnreadEmail {
   snippet: string;
   date: string;
   isRead: boolean;
+  userEmail?: string;
 }
 
 export interface Todo {
@@ -84,4 +85,5 @@ export interface Todo {
   sourceTitle: string;
   completed: boolean;
   createdAt: string;
+  userEmail?: string;
 }

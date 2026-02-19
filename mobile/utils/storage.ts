@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { STORAGE_KEYS } from './constants';
+import { eventEmitter } from './eventEmitter';
 import { AuthTokens, ProcessedFile, UnreadEmail, Todo } from '../types';
 import { SubscriptionState, UsageQuota } from '../types/subscription';
 
@@ -200,7 +201,10 @@ export const appStorage = {
 
   async getCachedEmails(): Promise<UnreadEmail[]> {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.CACHED_EMAILS);
-    return data ? JSON.parse(data) : [];
+    const emails: UnreadEmail[] = data ? JSON.parse(data) : [];
+    const userInfo = await this.getUserInfo();
+    if (!userInfo?.email) return [];
+    return emails.filter(e => e.userEmail === userInfo.email);
   },
 
   async setCachedEmails(emails: UnreadEmail[]): Promise<void> {
@@ -208,17 +212,16 @@ export const appStorage = {
   },
 
   async clearAll(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.USER_INFO,
-      STORAGE_KEYS.PROCESSED_FILES,
-      STORAGE_KEYS.LAST_SYNC,
-      STORAGE_KEYS.SYNC_PERIOD,
-      STORAGE_KEYS.HISTORY_ID,
-      STORAGE_KEYS.THEME_PREFERENCE,
-      STORAGE_KEYS.CACHED_EMAILS,
-      STORAGE_KEYS.TODOS,
-      STORAGE_KEYS.LAST_CLEANUP,
-    ]);
+    try {
+      // Get theme preference before clearing if we want to preserve it, 
+      // but the user wants NO data from previous account, so clearing all is safer.
+      await AsyncStorage.clear();
+      console.log('AsyncStorage cleared successfully');
+    } catch (e) {
+      console.error('Failed to clear AsyncStorage:', e);
+      // Fallback to manual removal if clear fails
+      await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
+    }
   },
 
   /**
@@ -226,7 +229,13 @@ export const appStorage = {
    */
   async getTodos(): Promise<Todo[]> {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.TODOS);
-    return data ? JSON.parse(data) : [];
+    const todos: Todo[] = data ? JSON.parse(data) : [];
+    const userInfo = await this.getUserInfo();
+    if (!userInfo?.email) return [];
+    // Many todos might not have userEmail yet if they were added via extraction or manual
+    // Let's ensure newly added todos have it, and filter by it.
+    // However, sourceId: 'manual' might be an issue.
+    return todos.filter(t => !t.userEmail || t.userEmail === userInfo.email);
   },
 
   async setTodos(todos: Todo[]): Promise<void> {
@@ -251,11 +260,14 @@ export const appStorage = {
       return;
     }
 
+    const userInfo = await this.getUserInfo();
+    todo.userEmail = userInfo?.email;
+
     todos.unshift(todo);
     await this.setTodos(todos);
+    eventEmitter.emit('todos-changed');
     
     // Sync to server
-    const userInfo = await this.getUserInfo();
     if (userInfo?.email) {
       const TodoService = require('../services/TodoService').default;
       TodoService.syncTodo(userInfo.email, todo).catch(console.error);
@@ -268,6 +280,7 @@ export const appStorage = {
     if (index !== -1) {
       todos[index].completed = !todos[index].completed;
       await this.setTodos(todos);
+      eventEmitter.emit('todos-changed');
       
       // Sync to server
       const userInfo = await this.getUserInfo();
@@ -283,6 +296,7 @@ export const appStorage = {
     const todoToDelete = todos.find(t => t.id === id);
     const filtered = todos.filter(t => t.id !== id);
     await this.setTodos(filtered);
+    eventEmitter.emit('todos-changed');
 
     // Sync to server
     if (todoToDelete) {

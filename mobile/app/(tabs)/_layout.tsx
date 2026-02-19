@@ -14,6 +14,20 @@ import { appStorage } from '@/utils/storage';
 import gmailService from '@/services/gmail';
 import { useIntelligence } from '@/hooks/useIntelligence';
 import { ProcessedFile, UnreadEmail } from '@/types';
+import { BlurView } from 'expo-blur';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring,
+  withTiming,
+  interpolate,
+  Extrapolate,
+  FadeIn,
+  FadeOut,
+  Layout
+} from 'react-native-reanimated';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -49,11 +63,10 @@ export default function TabLayout() {
     triggerHaptic('medium');
     switch (actionId) {
       case 'chat':
-        // Potentially navigate to a dedicated chat screen or open global bubble
         console.log('Global Chat requested');
         break;
       case 'summarize':
-        router.push('/reports');
+        router.push('/');
         break;
       case 'scan':
         router.push('/');
@@ -65,72 +78,206 @@ export default function TabLayout() {
 
   return (
     <>
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        headerShown: false,
-        tabBarStyle: {
-          position: 'absolute',
-          bottom: Math.max(12, insets.bottom + 8),
-          left: 16,
-          right: 16,
-          borderRadius: 20,
-          height: 64,
-          backgroundColor: theme === 'dark' ? colors.surface : colors.white + 'F0',
-          borderTopWidth: 0,
-          borderWidth: 0.5,
-          borderColor: colors.border,
-          elevation: 6,
-          ...Platform.select({
-            web: {
-              boxShadow: '0 4px 10px rgba(0, 0, 0, 0.1)',
-            },
-            default: {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.08,
-              shadowRadius: 8,
-            },
-          }),
-          paddingBottom: Math.max(8, insets.bottom / 2),
-        },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          marginBottom: 4,
-        },
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Flow',
-          tabBarIcon: ({ color }) => <TabBarIcon name="folder-sync-outline" color={color} />,
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: { display: 'none' }, // We'll use our custom tab bar
         }}
-      />
-      <Tabs.Screen
-        name="todos"
-        options={{
-          title: 'Todos',
-          tabBarIcon: ({ color }) => <TabBarIcon name="checkbox-marked-circle-outline" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => <TabBarIcon name="tune-variant" color={color} />,
-        }}
-      />
-    </Tabs>
+        tabBar={(props) => <CustomTabBar {...props} colors={colors} theme={theme} insets={insets} />}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Flow',
+            tabBarIcon: ({ color, focused }) => (
+              <MaterialCommunityIcons 
+                name={focused ? "folder-sync" : "folder-sync-outline"} 
+                size={26} 
+                color={color} 
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="todos"
+          options={{
+            title: 'Todos',
+            tabBarIcon: ({ color, focused }) => (
+              <MaterialCommunityIcons 
+                name={focused ? "checkbox-marked-circle" : "checkbox-marked-circle-outline"} 
+                size={26} 
+                color={color} 
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings',
+            tabBarIcon: ({ color, focused }) => (
+              <MaterialCommunityIcons 
+                name={focused ? "tune" : "tune-variant"} 
+                size={26} 
+                color={color} 
+              />
+            ),
+          }}
+        />
+      </Tabs>
 
       <AIOrb onPress={() => setAiMenuVisible(true)} status={intelligence.status} />
 
-    <AIActionSheet 
-      visible={aiMenuVisible} 
-      onClose={() => setAiMenuVisible(false)}
-      onAction={handleAIAction}
-    />
+      <AIActionSheet 
+        visible={aiMenuVisible} 
+        onClose={() => setAiMenuVisible(false)}
+        onAction={handleAIAction}
+      />
     </>
   );
 }
+
+function CustomTabBar({ state, descriptors, navigation, colors, theme, insets }: BottomTabBarProps & { colors: any, theme: string, insets: any }) {
+  // Removed previous sliding pill logic
+
+  return (
+    <View style={[styles.tabBarContainer, { bottom: Math.max(12, insets.bottom + 8) }]}>
+      <BlurView
+        intensity={theme === 'dark' ? 80 : 95}
+        tint={theme === 'dark' ? 'dark' : 'light'}
+        style={styles.blurContainer}
+      >
+        <View style={styles.tabsRow}>
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            const isFocused = state.index === index;
+
+            // Animated container style
+            const animatedContainerStyle = useAnimatedStyle(() => {
+              const bg = withTiming(
+                isFocused ? colors.primary + (theme === 'dark' ? '30' : '15') : 'transparent',
+                { duration: 200 }
+              );
+              return {
+                backgroundColor: bg,
+              };
+            });
+
+            const animatedIconStyle = useAnimatedStyle(() => {
+              const scale = withSpring(isFocused ? 1.1 : 1);
+              return {
+                transform: [{ scale }],
+              };
+            });
+
+            const onPress = () => {
+              triggerHaptic('light');
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
+
+            return (
+              <TouchableOpacity
+                key={route.key}
+                onPress={onPress}
+                style={styles.tabButton}
+                activeOpacity={0.7}
+              >
+                <Animated.View 
+                  layout={Layout.springify().damping(15)}
+                  style={[styles.animatedTabButton, animatedContainerStyle]}
+                >
+                  <Animated.View style={animatedIconStyle}>
+                    {options.tabBarIcon?.({
+                      focused: isFocused,
+                      color: isFocused ? colors.primary : colors.textSecondary,
+                      size: 24,
+                    })}
+                  </Animated.View>
+                  
+                  {isFocused && (
+                    <Animated.Text 
+                      entering={FadeIn.duration(200).delay(100)}
+                      exiting={FadeOut.duration(100)}
+                      numberOfLines={1}
+                      style={[
+                        styles.tabLabel, 
+                        { 
+                          color: colors.primary,
+                          fontWeight: '700',
+                          marginLeft: 8
+                        }
+                      ]}
+                    >
+                      {options.title}
+                    </Animated.Text>
+                  )}
+                </Animated.View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BlurView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBarContainer: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    height: 68,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  blurContainer: {
+    flex: 1,
+    paddingHorizontal: 8,
+  },
+  tabsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  tabButton: {
+    flex: 1,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  animatedTabButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+  },
+  iconWrapper: {
+    padding: 4,
+  },
+  tabLabel: {
+    fontSize: 13,
+  },
+});

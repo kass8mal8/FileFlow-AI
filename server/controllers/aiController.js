@@ -113,16 +113,34 @@ class AIController {
         return res.end();
       }
 
-      // Generate progressively
+      // Generate progressively with parallelization for faster performance
       const replyCount = tier === 'pro' ? 3 : 1;
       const isNoReply = from && from.toLowerCase().includes('noreply');
       const summaryAgent = require('../agents/SummaryAgent');
 
-      // 1. Summary (fastest, ~2s)
-      sendEvent('progress', { step: 1, total: 4, message: 'Generating summary...' });
-      const summaryResult = await summaryAgent.execute(text, { tier })
-        .catch(() => ({ summary: 'Unable to generate summary', confidence: 0.5 }));
+      // OPTIMIZATION: Run independent operations in parallel for faster results
+      // Summary, Replies, and Action Items can all run simultaneously
+      sendEvent('progress', { step: 1, total: 4, message: 'Analyzing email content...' });
       
+      const [summaryResult, repliesResult, actionItemsResult] = await Promise.all([
+        // 1. Summary (fastest, ~2s)
+        summaryAgent.execute(text, { tier })
+          .catch(() => ({ summary: 'Unable to generate summary', confidence: 0.5 })),
+        
+        // 2. Replies (fast, ~3s) - runs in parallel
+        isNoReply 
+          ? Promise.resolve([])
+          : aiService.generateSmartReplies(text, replyCount, userName || 'User', emailId, tier)
+              .catch(() => ['Thanks for reaching out!', 'Acknowledged, I\'m on it.', 'Will review and reply by EOD.']),
+        
+        // 3. Action Items (medium, ~4s) - runs in parallel
+        isNoReply
+          ? Promise.resolve({ tasks: [], confidence: 1 })
+          : aiService.extractActionItems(text, userName || 'User', tier, emailId)
+              .catch(() => ({ tasks: [], confidence: 0 }))
+      ]);
+
+      // Send summary immediately when ready
       let finalSummary = typeof summaryResult === 'string' ? summaryResult : (summaryResult.summary || 'Unable to generate summary');
       if (isNoReply && !finalSummary.startsWith('[System Notice]')) {
         finalSummary = `[System Notice] ${finalSummary}`;
@@ -132,22 +150,17 @@ class AIController {
         text: finalSummary, 
         confidence: summaryResult.confidence || 0.85 
       });
+      sendEvent('progress', { step: 2, total: 4, message: 'Summary ready!' });
 
-      // 2. Replies (fast, ~3s)
-      sendEvent('progress', { step: 2, total: 4, message: 'Generating smart replies...' });
-      const replies = isNoReply ? [] : await aiService.generateSmartReplies(text, replyCount, userName || 'User', emailId, tier)
-        .catch(() => ['Thanks for reaching out!', 'Acknowledged, I\'m on it.', 'Will review and reply by EOD.']);
-      
-      sendEvent('replies', replies);
+      // Send replies when ready
+      sendEvent('replies', repliesResult);
+      sendEvent('progress', { step: 3, total: 4, message: 'Smart replies ready!' });
 
-      // 3. Action Items (medium, ~4s)
-      sendEvent('progress', { step: 3, total: 4, message: 'Extracting action items...' });
-      const actionItemsResult = isNoReply ? { tasks: [], confidence: 1 } : await aiService.extractActionItems(text, userName || 'User', tier, emailId)
-        .catch(() => ({ tasks: [], confidence: 0 }));
-      
+      // Send action items when ready
       sendEvent('actionItems', actionItemsResult.tasks || []);
+      sendEvent('progress', { step: 3.5, total: 4, message: 'Action items extracted!' });
 
-      // 4. Intent Detection (slowest, ~5s)
+      // 4. Intent Detection (can also run in parallel, but sent last for UI flow)
       sendEvent('progress', { step: 4, total: 4, message: 'Detecting intent...' });
       const intentResult = await aiService.detectIntent(text, emailId, tier)
         .catch(() => ({ intent: 'INFO', confidence: 0, details: {}, actions: [] }));

@@ -170,6 +170,7 @@ class GmailService {
         if (cached && cached.length > 0) return cached;
       }
 
+      const userInfo = await appStorage.getUserInfo();
       const accessToken = await authService.getValidAccessToken();
       if (!accessToken) throw new Error('No valid access token');
 
@@ -200,6 +201,7 @@ class GmailService {
           snippet: data.snippet || '',
           date: headers.find((h: any) => h.name === 'Date')?.value || '',
           isRead: false,
+          userEmail: userInfo?.email,
         });
       }
 

@@ -80,6 +80,7 @@ export default function EmailDetailScreen() {
   const [todoList, setTodoList] = useState<any[]>([]);
   const [todoConfidence, setTodoConfidence] = useState<number>(0);
   const [summaryConfidence, setSummaryConfidence] = useState<number>(0);
+  const [aiProgress, setAiProgress] = useState<{ step: number; total: number; message: string } | null>(null);
   const [relatedData, setRelatedData] = useState<{
     files: ProcessedFile[];
     threads: any[];
@@ -342,6 +343,7 @@ export default function EmailDetailScreen() {
             {
               onProgress: (step, total, message) => {
                 console.log(`AI Progress: ${step}/${total} - ${message}`);
+                setAiProgress({ step, total, message });
               },
               onSummary: (summaryText, confidence) => {
                 setSummary(summaryText);
@@ -378,16 +380,23 @@ export default function EmailDetailScreen() {
                 }
               },
               onIntent: (intentData) => {
-                setDetectedIntent(intentData.type);
+                setDetectedIntent({
+                  type: intentData.type || 'INFO',
+                  confidence: intentData.confidence || 0,
+                  details: intentData.details || {},
+                  actions: intentData.actions || []
+                });
               },
               onComplete: (cached) => {
                 console.log(`Analysis complete (cached: ${cached})`);
                 setAiLoading(false);
+                setAiProgress(null);
               },
               onError: (error) => {
                 console.error("Progressive analysis error:", error);
                 setSummary("An error occurred during analysis.");
                 setAiLoading(false);
+                setAiProgress(null);
               }
             }
           );
@@ -835,21 +844,48 @@ export default function EmailDetailScreen() {
                   },
                 ]}
               >
+                {/* Progress Indicator */}
+                {aiProgress && (
+                  <View style={{ marginBottom: 16, padding: 12, backgroundColor: theme === 'dark' ? 'rgba(124, 58, 237, 0.1)' : 'rgba(124, 58, 237, 0.05)', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: colors.primary }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700', flex: 1 }}>
+                        {aiProgress.message}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                        {aiProgress.step}/{aiProgress.total}
+                      </Text>
+                    </View>
+                    <View style={{ height: 4, backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                      <View 
+                        style={{ 
+                          height: '100%', 
+                          backgroundColor: colors.primary, 
+                          width: `${(aiProgress.step / aiProgress.total) * 100}%`,
+                          borderRadius: 2,
+                        }} 
+                      />
+                    </View>
+                  </View>
+                )}
                 {/* Did You Know? Facts */}
-                {loadingFact && (
+                {loadingFact && !aiProgress && (
                   <View style={{ marginBottom: 16, padding: 12, backgroundColor: theme === 'dark' ? 'rgba(124, 58, 237, 0.1)' : 'rgba(124, 58, 237, 0.05)', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: '#7c3aed' }}>
                     <Text style={{ color: colors.textSecondary, fontSize: 12, fontStyle: 'italic' }}>
                       {loadingFact}
                     </Text>
                   </View>
                 )}
-                <Skeleton
-                  height={20}
-                  width="90%"
-                  style={{ marginBottom: 16 }}
-                  variant="rounded"
-                />
-                <Skeleton height={20} width="60%" variant="rounded" />
+                {!aiProgress && (
+                  <>
+                    <Skeleton
+                      height={20}
+                      width="90%"
+                      style={{ marginBottom: 16 }}
+                      variant="rounded"
+                    />
+                    <Skeleton height={20} width="60%" variant="rounded" />
+                  </>
+                )}
               </View>
             ) : (
               <TouchableOpacity

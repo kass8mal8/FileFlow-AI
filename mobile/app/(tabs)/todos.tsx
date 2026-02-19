@@ -9,9 +9,15 @@ import {
   Clock,
   ChevronRight,
   Plus,
+  Filter,
+  SortAsc,
+  SortDesc,
+  X,
+  Send,
 } from "lucide-react-native";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import TodoService from "@/services/TodoService";
+import { eventEmitter } from "@/utils/eventEmitter";
 import {
   ActivityIndicator,
   Dimensions,
@@ -24,6 +30,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/components/ThemeContext";
 import Animated, { 
@@ -36,10 +43,17 @@ import * as Haptics from "expo-haptics";
 
 const screenWidth = Dimensions.get("window").width;
 
+type FilterType = 'all' | 'pending' | 'completed';
+type SortType = 'date' | 'priority' | 'source';
+
 export default function TodosScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [sortBy, setSortBy] = useState<SortType>('date');
+  const [sortAscending, setSortAscending] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const { colors, theme, typography } = useTheme();
 
   const loadData = useCallback(async (isRefreshing = false) => {
@@ -89,7 +103,23 @@ export default function TodosScreen() {
 
   useEffect(() => {
     loadData();
+    
+    // Listen for changes from other screens
+    const handleChanged = () => {
+      console.log("Todos changed elsewhere, refreshing...");
+      loadData(true);
+    };
+    
+    eventEmitter.on('todos-changed', handleChanged);
+    return () => eventEmitter.off('todos-changed', handleChanged);
   }, [loadData]);
+
+  // Refresh when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData(true);
+    }, [loadData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -110,6 +140,40 @@ export default function TodosScreen() {
 
   const completedCount = todos.filter(t => t.completed).length;
   const pendingCount = todos.length - completedCount;
+
+  // Filter and sort todos
+  const filteredAndSortedTodos = useMemo(() => {
+    let filtered = todos;
+    
+    // Apply filter
+    if (filter === 'pending') {
+      filtered = todos.filter(t => !t.completed);
+    } else if (filter === 'completed') {
+      filtered = todos.filter(t => t.completed);
+    }
+    
+    // Apply sort
+    const sorted = [...filtered].sort((a, b) => {
+      let comparison = 0;
+      
+      if (sortBy === 'date') {
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        comparison = dateA - dateB;
+      } else if (sortBy === 'source') {
+        comparison = (a.sourceTitle || '').localeCompare(b.sourceTitle || '');
+      } else {
+        // Priority sort (completed items go to bottom)
+        if (a.completed !== b.completed) {
+          comparison = a.completed ? 1 : -1;
+        }
+      }
+      
+      return sortAscending ? comparison : -comparison;
+    });
+    
+    return sorted;
+  }, [todos, filter, sortBy, sortAscending]);
 
   if (loading) {
     return (
@@ -154,6 +218,12 @@ export default function TodosScreen() {
             </Text>
           </View>
           <View style={styles.statsContainer}>
+            <TouchableOpacity
+              onPress={() => setShowFilters(!showFilters)}
+              style={[styles.filterBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            >
+              <Filter size={16} color={colors.text} />
+            </TouchableOpacity>
             <View style={[styles.statBadge, { backgroundColor: colors.surface }]}>
               <Text style={[styles.statValue, { color: colors.primary }]}>{pendingCount}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pending</Text>
@@ -169,6 +239,100 @@ export default function TodosScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
+        {/* Filter Bar */}
+        {showFilters && (
+          <Animated.View 
+            entering={FadeInDown.delay(50)}
+            exiting={FadeOut}
+            style={[styles.filterBar, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <View style={styles.filterRow}>
+              <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>Filter:</Text>
+              {(['all', 'pending', 'completed'] as FilterType[]).map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  onPress={() => {
+                    setFilter(f);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: filter === f ? colors.primary : colors.background,
+                      borderColor: filter === f ? colors.primary : colors.border,
+                    }
+                  ]}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: filter === f ? '#fff' : colors.text }
+                  ]}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.filterRow}>
+              <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>Sort:</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setSortBy('date');
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={[
+                  styles.sortBtn,
+                  {
+                    backgroundColor: sortBy === 'date' ? colors.primary + '20' : 'transparent',
+                    borderColor: sortBy === 'date' ? colors.primary : colors.border,
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.sortBtnText,
+                  { color: sortBy === 'date' ? colors.primary : colors.text }
+                ]}>
+                  Date
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setSortBy('source');
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={[
+                  styles.sortBtn,
+                  {
+                    backgroundColor: sortBy === 'source' ? colors.primary + '20' : 'transparent',
+                    borderColor: sortBy === 'source' ? colors.primary : colors.border,
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.sortBtnText,
+                  { color: sortBy === 'source' ? colors.primary : colors.text }
+                ]}>
+                  Source
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setSortAscending(!sortAscending);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={[
+                  styles.sortToggleBtn,
+                  { backgroundColor: colors.background, borderColor: colors.border }
+                ]}
+              >
+                {sortAscending ? (
+                  <SortAsc size={16} color={colors.text} />
+                ) : (
+                  <SortDesc size={16} color={colors.text} />
+                )}
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
         
         {/* Progress Card */}
         <Animated.View entering={FadeInDown.delay(100)}>
@@ -225,7 +389,32 @@ export default function TodosScreen() {
           </Animated.View>
         ) : (
           <View style={styles.todoList}>
-            {todos.map((todo, index) => (
+            {filteredAndSortedTodos.length === 0 ? (
+              <Animated.View entering={FadeInDown.delay(200)} style={styles.emptyContainer}>
+                <View style={[styles.emptyIconCircle, { backgroundColor: colors.surface }]}>
+                  <Inbox size={48} color={colors.textTertiary} />
+                </View>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No {filter === 'all' ? '' : filter} todos
+                </Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  {filter === 'pending' 
+                    ? "All your tasks are completed! Great job! 🎉"
+                    : filter === 'completed'
+                    ? "Complete some tasks to see them here."
+                    : "New todos will appear here when you or the AI adds them from your emails and files."}
+                </Text>
+                {filter !== 'all' && (
+                  <TouchableOpacity
+                    onPress={() => setFilter('all')}
+                    style={[styles.clearFilterBtn, { backgroundColor: colors.primary }]}
+                  >
+                    <Text style={styles.clearFilterText}>Show All</Text>
+                  </TouchableOpacity>
+                )}
+              </Animated.View>
+            ) : (
+              filteredAndSortedTodos.map((todo, index) => (
               <Animated.View 
                 key={todo.id || `todo-${index}`} 
                 entering={FadeInDown.delay(index * 50)} 
@@ -273,7 +462,7 @@ export default function TodosScreen() {
                   <Trash2 size={20} color="#ef4444" />
                 </TouchableOpacity>
               </Animated.View>
-            ))}
+            )))}
           </View>
         )}
       </ScrollView>
@@ -412,12 +601,86 @@ const styles = StyleSheet.create({
   todoList: {
     gap: 12,
   },
+  filterBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  filterBar: {
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sortBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sortToggleBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    marginLeft: 'auto',
+  },
+  clearFilterBtn: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  clearFilterText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   todoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     borderRadius: 20,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   todoItemCompleted: {
     opacity: 0.7,
