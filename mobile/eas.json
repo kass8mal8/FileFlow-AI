@@ -17,12 +17,7 @@
     "testing": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
-      },
-      "ios": {
-        "simulator": false,
-        "buildConfiguration": "Release"
+        "buildType": "apk"
       }
     },
     "production": {
