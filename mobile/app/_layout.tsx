@@ -104,11 +104,21 @@ function RootLayoutNav() {
     // Request notification permissions on mount
     const NotificationService = require('@/services/NotificationService').default;
     NotificationService.requestPermissions();
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').then(registration => {
+          console.log('SW registered: ', registration);
+        }).catch(registrationError => {
+          console.log('SW registration failed: ', registrationError);
+        });
+      });
+    }
   }, []);
 
   return (
     <NavigationThemeProvider value={theme === "dark" ? DarkTheme : DefaultTheme}>
-
       <ToastProvider>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

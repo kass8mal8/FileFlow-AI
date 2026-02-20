@@ -38,7 +38,28 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "config": {
+        "pwa": {
+          "manifest": {
+            "name": "FileFlow AI",
+            "short_name": "FileFlow",
+            "description": "Intelligent File and Email Management with AI",
+            "start_url": ".",
+            "display": "standalone",
+            "orientation": "portrait",
+            "theme_color": "#7C3AED",
+            "background_color": "#0F172A",
+            "icons": [
+              {
+                "src": "./assets/images/icon.png",
+                "sizes": [96, 128, 192, 256, 384, 512],
+                "type": "image/png"
+              }
+            ]
+          }
+        }
+      }
     },
     "plugins": [
       "expo-router",
